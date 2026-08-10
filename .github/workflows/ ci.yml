@@ -1,4 +1,4 @@
-name: STM32 CI/CD with Simulation & Checks
+name: STM32 CI/CD with Checks
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ "main", "master" ]
 
 jobs:
-  build-and-test:
+  build-and-check:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,12 +17,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Сборка + Автоматический запуск тестов размера и симулятора внутри Docker
-      - name: Build, Check Size & Run Tests via Docker
+      # 1. Собираем прошивку через Docker
+      - name: Build Firmware via Docker
         run: |
           docker build --target artifacts --output type=local,dest=./build_out .
-  
-      # Загрузка готовой прошивки в артефакты GitHub
+
+      # 2. Устанавливаем ARM Toolchain прямо на раннер GitHub, чтобы использовать arm-none-eabi-size
+      - name: Install ARM Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi
+
+      # 3. Явный шаг проверки размера прошивки (теперь виден отдельным блоком в UI GitHub)
+      - name: Check Firmware Size
+        run: |
+          python3 scripts/check_size.py build_out/UART_DRIVER.elf
+
+      # 4. Загрузка готовой прошивки в артефакты
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
