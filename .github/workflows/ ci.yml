@@ -1,0 +1,31 @@
+name: STM32 CI/CD with Simulation & Checks
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Сборка + Автоматический запуск тестов размера и симулятора внутри Docker
+      - name: Build, Check Size & Run Tests via Docker
+        run: |
+          docker build --target artifacts --output type=local,dest=./build_out .
+  
+      # Загрузка готовой прошивки в артефакты GitHub
+      - name: Upload Firmware Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stm32-firmware-elf
+          path: build_out/UART_DRIVER.elf
+          retention-days: 7
