@@ -14,26 +14,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 1. Автоматический запуск pre-commit проверок (линтеры, форматирование, yaml)
+      - name: Run Pre-commit Checks
+        uses: pre-commit/action@v3.0.0
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 1. Собираем прошивку через Docker
+      # 2. Собираем прошивку через Docker
       - name: Build Firmware via Docker
         run: |
           docker build --target artifacts --output type=local,dest=./build_out .
 
-      # 2. Устанавливаем ARM Toolchain прямо на раннер GitHub, чтобы использовать arm-none-eabi-size
+      # 3. Устанавливаем ARM Toolchain прямо на раннер GitHub, чтобы использовать arm-none-eabi-size
       - name: Install ARM Toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi
 
-      # 3. Явный шаг проверки размера прошивки (теперь виден отдельным блоком в UI GitHub)
+      # 4. Явный шаг проверки размера прошивки (теперь виден отдельным блоком в UI GitHub)
       - name: Check Firmware Size
         run: |
           python3 scripts/check_size.py build_out/UART_DRIVER.elf
 
-      # 4. Загрузка готовой прошивки в артефакты
+      # 5. Загрузка готовой прошивки в артефакты
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
