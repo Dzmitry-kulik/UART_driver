@@ -108,6 +108,9 @@ inline uint16_t get_dma_rx_counter(void) {
 /**
  * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
  */
+/**
+ * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
+ */
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
   auto &stats = g_stats;
@@ -116,42 +119,42 @@ void on_frame_parsed(
     const auto &frame = result.value();
     stats.rx_frames_ok++;
 
-    // Формируем пакет ACK для ответа хосту (для Python-скрипта)
-    static uint8_t ack_frame[] = {
-        0xAA,          0x55, // Преамбула
-        0x01,                // Версия
-        0x02,                // Тип (ACK)
-        frame.seq_num,       // Возвращаем тот же seq_num
-        0x00,          0x00, // Длина payload = 0
-        0x00,          0x00 // Место под CRC (заполнится ниже)
+    // 1. Инициализируем массив фиксированными значениями.
+    // Слово static оставляет его в памяти для DMA, но базовые байты не
+    // меняются.
+    static uint8_t ack_frame[9] = {
+        0xAA, 0x55, // Преамбула
+        0x01,       // Версия
+        0x02,       // Тип (ACK)
+        0x00,       // seq_num (ПЕРЕЗАПИСЫВАЕТСЯ НИЖЕ!)
+        0x00, 0x00, // Длина payload = 0
+        0x00, 0x00  // Место под CRC
     };
 
+    // 🚨 ИСПРАВЛЕНИЕ 1: Принудительно перезаписываем seq_num для КАЖДОГО нового
+    // пакета!
+    ack_frame[4] = frame.seq_num;
+
+    // Считаем CRC (начиная с Версии, 5 байт)
     uint16_t crc = protocol::Crc16::calculate(&ack_frame[2], 5);
 
-    // Вписываем CRC в последние два байта (Little-Endian или Big-Endian -
-    // зависит от твоего протокола, в Python у тебя struct.pack(">H", crc) - это
-    // Big Endian)
+    // Записываем CRC в конец пакета
     ack_frame[7] = (crc >> 8) & 0xFF; // MSB
     ack_frame[8] = crc & 0xFF;        // LSB
 
     // Отправляем пакет в DMA
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
 
-    // Бизнес-логика обработки валидного кадра
     switch (frame.type) {
     case protocol::MessageType::DATA:
-      // Доступ к данным кадра: frame.payload
       break;
-
     case protocol::MessageType::ACK:
     case protocol::MessageType::NACK:
       break;
-
     default:
       break;
     }
   } else {
-    // Учёт ошибок парсинга протокола
     switch (result.error()) {
     case protocol::ParseError::INVALID_CRC:
       stats.crc_errors++;
@@ -182,24 +185,22 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 
 /**
  * @brief Обработчик аппаратных ошибок периферии UART.
- * Регистрирует Framing, Parity, Overrun ошибки в DiagnosticsService.
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     uint32_t er = huart->ErrorCode;
     auto &stats = g_stats;
 
-    if (er & HAL_UART_ERROR_FE) {
+    if (er & HAL_UART_ERROR_FE)
       stats.hw_framing_errors++;
-    }
-    if (er & HAL_UART_ERROR_PE) {
+    if (er & HAL_UART_ERROR_PE)
       stats.hw_parity_errors++;
-    }
-    if (er & HAL_UART_ERROR_ORE) {
+    if (er & HAL_UART_ERROR_ORE)
       stats.hw_overrun_errors++;
-      // В случае Overrun сбрасывается прием DMA, поэтому перезапускаем его
-      HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
-    }
+
+    // 🚨 ИСПРАВЛЕНИЕ 2: При ЛЮБОЙ аппаратной ошибке HAL жестко выключает прием.
+    // Нам нужно безусловно перезапустить DMA RX, чтобы контроллер не "оглох".
+    HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
   }
 }
 }
