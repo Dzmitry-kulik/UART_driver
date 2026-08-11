@@ -19,9 +19,9 @@ set(CPU_OPTIONS
 
 add_executable(UART_DRIVER)
 
-# Исходные файлы проекта
+# Исходные файлы проекта (с учетом папок Core/Src и Startup)
 target_sources(UART_DRIVER PRIVATE
-    # Основные системные файлы и HAL
+    # Основные системные файлы и HAL (находятся в Core/Src)
     Core/Src/main.cpp
     Core/Src/stm32f4xx_hal_msp.c
     Core/Src/stm32f4xx_it.c
@@ -29,17 +29,17 @@ target_sources(UART_DRIVER PRIVATE
     Core/Src/sysmem.c
     Core/Src/system_stm32f4xx.c
 
-    # Файлы протокола (из папки Core/Src/protocol/src)
+    # Файлы протокола (внутри Core/Src/protocol/src)
     Core/Src/protocol/src/circular_buf.cpp
     Core/Src/protocol/src/diagnostics.cpp
     Core/Src/protocol/src/FSM_parser.cpp
     Core/Src/protocol/src/tx_manager.cpp
 
-    # Стартовый файл (путь зависит от точного расположения в папке Startup)
+    # Стартовый файл (находится в папке Startup)
     Startup/startup_stm32f411ceux.s
 )
 
-# Пути к заголовочным файлам (включая папку protocol/inc)
+# Пути к заголовочным файлам
 target_include_directories(UART_DRIVER PRIVATE
     Core/Inc
     Core/Src/protocol/inc
