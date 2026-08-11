@@ -28,7 +28,7 @@ target_sources(UART_DRIVER PRIVATE
     Core/Src/syscalls.c
     Core/Src/sysmem.c
     Core/Src/system_stm32f4xx.c
-    Core/Src/startup_stm32f411ceux.s
+    Core/Startup/startup_stm32f411ceux.s
 
     # Файлы протокола (внутри Core/Src/protocol/src)
     Core/Src/protocol/src/circular_buf.cpp
