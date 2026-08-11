@@ -24,7 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "diagnostics.hpp"
-#include "frame_parser.hpp"
+#include "frame.hpp"
 #include "tx_manager.hpp"
 /* USER CODE END Includes */
 
