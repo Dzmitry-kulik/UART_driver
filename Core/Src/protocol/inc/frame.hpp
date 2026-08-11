@@ -25,15 +25,6 @@ enum class MessageType : uint8_t {
   UNKNOWN = 0xFF
 };
 
-enum class ParseError : uint8_t {
-  NONE = 0,
-  INVALID_CRC,       // Ошибка контрольной суммы
-  PAYLOAD_TOO_LARGE, // Длина превышает лимит памяти
-  FRAME_INCOMPLETE, // Обрыв кадра (таймаут между байтами)
-  UNEXPECTED_BYTE, // Потеря синхронизации / байт вне протокола
-  BUFFER_OVERFLOW // Переполнение внутреннего буфера
-};
-
 #pragma pack(push, 1)
 struct FrameHeader {
   uint8_t version{CURRENT_VERSION};

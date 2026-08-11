@@ -25,7 +25,7 @@
 // 1. СНАЧАЛА подключаем HAL, чтобы он определил все типы (UART_HandleTypeDef и
 // т.д.)
 #include "stm32f4xx_hal.h"
-
+#include <main.h>
 #undef CRC
 
 // 3. И ТОЛЬКО ТЕПЕРЬ подключаем твои C++ классы
