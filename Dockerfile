@@ -43,8 +43,8 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 RUN python3 tests/check_size.py
 
 # 3. Интеграционное тестирование: запуск Renode и прогон тестов из папки tests/
-RUN renode --headless -e "include @tests/test_board.resc" & \
-    sleep 3 && \
+RUN renode --disable-xwt tests/test_board.resc & \
+    sleep 5 && \
     python3 tests/tests.py
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
