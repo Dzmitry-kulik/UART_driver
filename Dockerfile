@@ -36,8 +36,8 @@ ENV PATH="/opt/arm-toolchain/bin:/opt/renode:$PATH"
 WORKDIR /app
 COPY . .
 
-# 1. Сборка проекта (C++, Toolchain)
-RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Release && \
+# 1. Сборка проекта с отладочными символами (-g)
+RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
     cmake --build build
 
 # 2. Проверка размера прошивки через скрипт из папки tests/

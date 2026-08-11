@@ -4,7 +4,7 @@ machine LoadPlatformDescription @platforms/boards/stm32f4_discovery-kit.repl
 emulation CreateServerSocketTerminal 1234 "uart_socket"
 connector Connect sysbus.usart1 uart_socket
 
-# Включаем GDB-сервер
+# 🚨 Включение GDB-сервера для подключения gdb-multiarch
 machine StartGdbServer 3333
 
 sysbus LoadELF @/app/build/UART_DRIVER

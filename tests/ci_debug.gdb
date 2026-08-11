@@ -1,22 +1,16 @@
-_# Подключаемся к GDB-серверу Renode
+set architecture arm
 target remote localhost:3333
 
-echo \n=== [CI DEBUG] ДАМП ВНУТРЕННИХ ПЕРЕМЕННЫХ C++ ===\n
-
-echo --- g_stats (Статистика) ---\n
+printf "\n================ [CI DEBUG DUMP] ================\n"
+printf "g_stats:\n"
 print g_stats
 
-echo \n--- Состояние кольцевого буфера ---\n
+printf "\ng_read_pos:\n"
 print g_read_pos
 
-echo \n--- Состояние UART1 ---\n
-print huart1.gState
-print huart1.RxState
-print huart1.ErrorCode
+printf "\nhuart1.gState: %d\n", huart1.gState
+printf "huart1.RxState: %d\n", huart1.RxState
+printf "huart1.ErrorCode: %d\n", huart1.ErrorCode
+printf "=================================================\n"
 
-echo \n--- Состояние DMA RX & TX ---\n
-print huart1.hdmarx->State
-print huart1.hdmatx->State
-
-echo \n=== КОНЕЦ ДАМПА ===\n
 quit
