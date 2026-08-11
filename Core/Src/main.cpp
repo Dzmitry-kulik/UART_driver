@@ -117,7 +117,7 @@ void on_frame_parsed(
     stats.rx_frames_ok++;
 
     // Формируем пакет ACK для ответа хосту (для Python-скрипта)
-    uint8_t ack_frame[] = {
+    static uint8_t ack_frame[] = {
         0xAA,          0x55, // Преамбула
         0x01,                // Версия
         0x02,                // Тип (ACK)
@@ -173,6 +173,7 @@ static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
  * @brief Обработчик окончания отправки блока DMA TX.
  * Вызывается автоматически библиотекой HAL при завершении передачи.
  */
+extern "C" {
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     g_tx_manager.on_tx_complete_isr();
@@ -200,6 +201,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
       HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
     }
   }
+}
 }
 
 /* USER CODE END 0 */
