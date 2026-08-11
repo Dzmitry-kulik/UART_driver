@@ -37,4 +37,4 @@ RUN python3 scripts/check_size.py
 FROM scratch AS artifacts
 
 # Копируем проверенный и собранный ELF-файл наружу
-COPY --from=builder /app/build/UART_DRIVER.elf /
+COPY --from=builder /app/build/UART_DRIVER /
