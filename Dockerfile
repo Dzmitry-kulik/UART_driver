@@ -3,12 +3,13 @@ FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Устанавливаем базовые системные утилиты, CMake и распаковщики
+# Устанавливаем базовые системные утилиты, CMake, Python и модуль serial
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
     python3 \
     python3-pip \
+    python3-serial \
     wget \
     xz-utils \
     ca-certificates \
@@ -19,6 +20,13 @@ RUN wget -O /tmp/arm-toolchain.tar.xz https://developer.arm.com/-/media/Files/do
     mkdir -p /opt/arm-toolchain && \
     tar -xf /tmp/arm-toolchain.tar.xz -C /opt/arm-toolchain --strip-components=1 && \
     rm /tmp/arm-toolchain.tar.xz
+
+# Скачиваем и устанавливаем эмулятор Renode
+RUN wget -q https://builds.renode.io/renode_latest_amd64.deb -O /tmp/renode.deb && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends /tmp/renode.deb && \
+    rm /tmp/renode.deb && \
+    rm -rf /var/lib/apt/lists/*
 
 # Добавляем компилятор в системный путь (PATH)
 ENV PATH="/opt/arm-toolchain/bin:$PATH"
@@ -32,6 +40,11 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 
 # 2. Проверка размера прошивки через скрипт
 RUN python3 scripts/check_size.py
+
+# 3. Интеграционное тестирование: запуск Renode и прогон 12 тестов
+RUN renode --headless -e "include @test_board.resc" & \
+    sleep 3 && \
+    python3 scripts/run_tests.py
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
