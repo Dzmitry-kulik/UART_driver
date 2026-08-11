@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     mono-complete \
     gtk-sharp2 \
-    libmono-posix3.0-cil \
     && rm -rf /var/lib/apt/lists/*
 
 # Скачиваем и устанавливаем официальный ARM GNU Toolchain
@@ -44,7 +43,7 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 RUN python3 scripts/check_size.py
 
 # 3. Интеграционное тестирование: запуск Renode и прогон тестов
-RUN renode --headless -e "include @test_board.resc" & \
+RUN renode --headless -e "include @tests/test_board.resc" & \
     sleep 3 && \
     python3 scripts/run_tests.py
 
