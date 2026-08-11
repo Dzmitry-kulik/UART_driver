@@ -126,7 +126,7 @@ void on_frame_parsed(
         0x00,          0x00 // Место под CRC (заполнится ниже)
     };
 
-    uint16_t crc = protocol::calculate(&ack_frame[2], 5);
+    uint16_t crc = protocol::Crc16::calculate(&ack_frame[2], 5);
 
     // Вписываем CRC в последние два байта (Little-Endian или Big-Endian -
     // зависит от твоего протокола, в Python у тебя struct.pack(">H", crc) - это
