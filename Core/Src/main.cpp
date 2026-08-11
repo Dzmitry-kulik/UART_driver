@@ -64,7 +64,7 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 // Хэндл UART1, сгенерированный STM32CubeMX
-extern UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart1;
 
 // Кольцевой буфер приёма DMA и программный индекс чтения
 alignas(4) uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
