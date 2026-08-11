@@ -27,6 +27,7 @@
 #include "frame.hpp"
 #include "stm32f4xx_hal.h" // Исправляет ошибку неполного типа UART_HandleTypeDef
 #include "tx_manager.hpp"
+#include <expected>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

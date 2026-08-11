@@ -56,8 +56,6 @@ target_compile_definitions(UART_DRIVER PRIVATE
 # Флаги компилятора
 target_compile_options(UART_DRIVER PRIVATE
     ${CPU_OPTIONS}
-    -Wall
-    -Wextra
     -Wno-unused-parameter
     -fdata-sections
     -ffunction-sections
