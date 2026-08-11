@@ -65,7 +65,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     hdma_usart1_rx.Init.Channel = DMA_CHANNEL_4;
     hdma_usart1_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
     hdma_usart1_rx.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma_usart1_rx.Init.MemInc = DMA_MINCC_ENABLE;
+    hdma_usart1_rx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_usart1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_usart1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_usart1_rx.Init.Mode = DMA_CIRCULAR;
@@ -76,7 +76,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
       Error_Handler();
     }
 
-    // 🚨 Ключевой шаг: привязываем DMA RX к структуре huart
+    // Привязываем DMA RX к структуре huart
     __HAL_LINKDMA(huart, hdmarx, hdma_usart1_rx);
 
     /* 3. Инициализация DMA TX (DMA2 Stream 7 Channel 4) */
@@ -84,7 +84,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     hdma_usart1_tx.Init.Channel = DMA_CHANNEL_4;
     hdma_usart1_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_usart1_tx.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma_usart1_tx.Init.MemInc = DMA_MINCC_ENABLE;
+    hdma_usart1_tx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_usart1_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_usart1_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_usart1_tx.Init.Mode = DMA_NORMAL;
@@ -95,7 +95,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
       Error_Handler();
     }
 
-    // 🚨 Ключевой шаг: привязываем DMA TX к структуре huart
+    // Привязываем DMA TX к структуре huart
     __HAL_LINKDMA(huart, hdmatx, hdma_usart1_tx);
 
     /* 4. Настройка прерываний UART и DMA */

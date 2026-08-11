@@ -39,13 +39,13 @@ COPY . .
 RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Release && \
     cmake --build build
 
-# 2. Проверка размера прошивки через скрипт
-RUN python3 scripts/check_size.py
+# 2. Проверка размера прошивки через скрипт из папки tests/
+RUN python3 tests/check_size.py
 
-# 3. Интеграционное тестирование: запуск Renode и прогон тестов
+# 3. Интеграционное тестирование: запуск Renode и прогон тестов из папки tests/
 RUN renode --headless -e "include @tests/test_board.resc" & \
     sleep 3 && \
-    python3 scripts/run_tests.py
+    python3 tests/tests.py
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
