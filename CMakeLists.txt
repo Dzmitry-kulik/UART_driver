@@ -66,15 +66,15 @@ target_compile_options(UART_DRIVER PRIVATE
     -Wno-unused-parameter
     -fdata-sections
     -ffunction-sections
-    -fno-exceptions
-    -fno-rtti
+    # Отключение rtti и exceptions применяется ТОЛЬКО для файлов C++
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
 )
 
 # Флаги линковщика
 target_link_options(UART_DRIVER PRIVATE
     ${CPU_OPTIONS}
     -specs=nano.specs
-    -specs=nosys.specs
     -T${CMAKE_CURRENT_SOURCE_DIR}/STM32F411CEUX_FLASH.ld
     -Wl,-Map=${PROJECT_NAME}.map,--cref
     -Wl,--gc-sections
