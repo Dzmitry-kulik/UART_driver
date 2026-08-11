@@ -6,7 +6,7 @@ set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR cortex-m4)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Опции компиляции и линковки для STM32F411CEU6
@@ -61,6 +61,8 @@ target_compile_options(UART_DRIVER PRIVATE
     -Wno-unused-parameter
     -fdata-sections
     -ffunction-sections
+    -fno-exceptions
+    -fno-rtti
 )
 
 # Флаги линковщика

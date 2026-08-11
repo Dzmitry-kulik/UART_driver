@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "diagnostics.hpp"
 #include "frame.hpp"
+#include "stm32f4xx_hal.h" // Исправляет ошибку неполного типа UART_HandleTypeDef
 #include "tx_manager.hpp"
 /* USER CODE END Includes */
 
@@ -56,10 +57,13 @@ size_t g_read_pos = 0;
 // Флаг события прерывания IDLE (выставляется в stm32f4xx_it.c)
 volatile bool g_data_received_event = false;
 
-// 1. Диагностический сервис статистики
-protocol::DiagnosticsService g_diagnostics{};
+// 1. Создаем экземпляр структуры статистики, передаваемый в диагностику
+protocol::DiagnosticsStats g_stats{};
 
-// 2. Менеджер отправки через DMA TX с кольцевой очередью
+// 2. Диагностический сервис статистики (принимает ссылку на stats)
+protocol::DiagnosticsService g_diagnostics(g_stats);
+
+// 3. Менеджер отправки через DMA TX с кольцевой очередью
 protocol::UartTxManager g_tx_manager(huart1);
 
 /* USER CODE END PV */
