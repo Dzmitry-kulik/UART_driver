@@ -23,9 +23,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "FSM_parser.hpp" // Добавлено для разрешения типа protocol::FrameParser
 #include "diagnostics.hpp"
 #include "frame.hpp"
-#include "stm32f4xx_hal.h" // Исправляет ошибку неполного типа UART_HandleTypeDef
+#include "stm32f4xx_hal.h" // HAL должен быть ДО C++ заголовков с forward declarations
 #include "tx_manager.hpp"
 #include <expected>
 /* USER CODE END Includes */
@@ -97,7 +98,8 @@ inline uint16_t get_dma_rx_counter(void) {
  */
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
-  auto &stats = g_diagnostics.get_stats_mutable();
+  auto &stats =
+      g_stats; // Исправлено: обращаемся напрямую к глобальной структуре
 
   if (result.has_value()) {
     const auto &frame = result.value();
@@ -132,9 +134,8 @@ void on_frame_parsed(
   }
 }
 
-// Инициализация экземпляра FrameParser
-static protocol::FrameParser g_parser(g_diagnostics.get_stats_mutable(),
-                                      on_frame_parsed);
+// Инициализация экземпляра FrameParser (передаем напрямую g_stats)
+static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 /**
  * @brief Обработчик окончания отправки блока DMA TX.
@@ -153,7 +154,8 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     uint32_t er = huart->ErrorCode;
-    auto &stats = g_diagnostics.get_stats_mutable();
+    auto &stats =
+        g_stats; // Исправлено: обращаемся напрямую к глобальной структуре
 
     if (er & HAL_UART_ERROR_FE) {
       stats.hw_framing_errors++;
