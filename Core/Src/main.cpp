@@ -19,30 +19,24 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
-// 1. СНАЧАЛА подключаем HAL, чтобы он определил все типы (UART_HandleTypeDef и
-// т.д.)
-/* Includes ------------------------------------------------------------------*/
-#include "main.h" // Обязательно в кавычках. Он подтянет HAL и Error_Handler()
+#include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-// 1. Сразу же отменяем сишный макрос CRC, чтобы он не ломал твои enum class
+// 1. Подключаем HAL для определения типов и макросов периферии
+#include "stm32f4xx_hal.h"
+
+// 2. Отменяем сишный макрос CRC библиотеки HAL, чтобы не ломать enum class
 #undef CRC
 
-// 2. Подключаем твои C++ классы
+// 3. C++ заголовки проекта
 #include "FSM_parser.hpp"
 #include "diagnostics.hpp"
 #include "frame.hpp"
 #include "tx_manager.hpp"
 #include <expected>
 
-/* USER CODE END Includes */
-
-/* USER CODE END Includes */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -63,7 +57,7 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-// Хэндл UART1, сгенерированный STM32CubeMX
+// Хэндл UART1 (физическое выделение памяти)
 UART_HandleTypeDef huart1;
 
 // Кольцевой буфер приёма DMA и программный индекс чтения
@@ -112,12 +106,22 @@ inline uint16_t get_dma_rx_counter(void) {
  */
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
-  auto &stats =
-      g_stats; // Исправлено: обращаемся напрямую к глобальной структуре
+  auto &stats = g_stats;
 
   if (result.has_value()) {
     const auto &frame = result.value();
     stats.rx_frames_ok++;
+
+    // Формируем пакет ACK для ответа хосту (для Python-скрипта)
+    uint8_t ack_frame[] = {
+        0xAA,          0x55, // Преамбула
+        0x01,                // Версия
+        0x02,                // Тип (ACK)
+        frame.seq_num,       // Возвращаем тот же seq_num
+        0x00,          0x00, // Длина payload = 0
+        0x00,          0x00  // Заглушка CRC
+    };
+    g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
 
     // Бизнес-логика обработки валидного кадра
     switch (frame.type) {
@@ -148,12 +152,12 @@ void on_frame_parsed(
   }
 }
 
-// Инициализация экземпляра FrameParser (передаем напрямую g_stats)
+// Инициализация экземпляра FrameParser
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 /**
  * @brief Обработчик окончания отправки блока DMA TX.
- * Вызывается автоматически библиотека HAL при завершении передачи.
+ * Вызывается автоматически библиотекой HAL при завершении передачи.
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
@@ -168,8 +172,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     uint32_t er = huart->ErrorCode;
-    auto &stats =
-        g_stats; // Исправлено: обращаемся напрямую к глобальной структуре
+    auto &stats = g_stats;
 
     if (er & HAL_UART_ERROR_FE) {
       stats.hw_framing_errors++;
