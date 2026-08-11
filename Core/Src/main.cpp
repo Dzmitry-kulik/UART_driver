@@ -32,6 +32,7 @@
 
 // 3. C++ заголовки проекта
 #include "FSM_parser.hpp"
+#include "crc16.hpp"
 #include "diagnostics.hpp"
 #include "frame.hpp"
 #include "tx_manager.hpp"
