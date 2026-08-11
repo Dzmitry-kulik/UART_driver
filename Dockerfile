@@ -3,7 +3,7 @@ FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Устанавливаем базовые системные утилиты, CMake, Python и зависимости Renode
+# Устанавливаем базовые системные утилиты, CMake, Python, зависимости Renode и gdb-multiarch
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     mono-complete \
     gtk-sharp2 \
+    gdb-multiarch \
     && rm -rf /var/lib/apt/lists/*
 
 # Скачиваем и устанавливаем официальный ARM GNU Toolchain
@@ -42,12 +43,11 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 # 2. Проверка размера прошивки через скрипт из папки tests/
 RUN python3 tests/check_size.py
 
-# 3. Интеграционное тестирование: запуск Renode и прогон тестов из папки tests/
-# 3. Интеграционное тестирование + автоматический дамп переменных
+# 3. Интеграционное тестирование + автоматический дамп переменных через gdb-multiarch
 RUN renode --disable-xwt tests/test_board.resc & \
     sleep 5 && \
     (python3 tests/tests.py || true) && \
-    arm-none-eabi-gdb -x tests/ci_debug.gdb /app/build/UART_DRIVER
+    gdb-multiarch -x tests/ci_debug.gdb /app/build/UART_DRIVER
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
