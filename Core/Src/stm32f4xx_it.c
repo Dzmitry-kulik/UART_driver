@@ -187,26 +187,3 @@ void SysTick_Handler(void) {
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
-/* USER CODE BEGIN EV */
-extern UART_HandleTypeDef huart1;
-extern volatile bool g_data_received_event;
-/* USER CODE END EV */
-
-/**
- * @brief This function handles USART1 global interrupt.
- */
-void USART1_IRQHandler(void) {
-  /* USER CODE BEGIN USART1_IRQn 0 */
-  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE) != RESET &&
-      __HAL_UART_GET_IT_SOURCE(&huart1, UART_IT_IDLE) != RESET) {
-    __HAL_UART_CLEAR_IDLEFLAG(&huart1);
-    g_data_received_event = true;
-  }
-  /* USER CODE END USART1_IRQn 0 */
-
-  HAL_UART_IRQHandler(&huart1);
-
-  /* USER CODE BEGIN USART1_IRQn 1 */
-
-  /* USER CODE END USART1_IRQn 1 */
-}

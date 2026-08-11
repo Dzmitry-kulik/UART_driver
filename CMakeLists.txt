@@ -19,9 +19,13 @@ set(CPU_OPTIONS
 
 add_executable(UART_DRIVER)
 
+# Автоматически находим все исходные файлы HAL-библиотеки
+# Это подтянет stm32f4xx_hal_uart.c, stm32f4xx_hal_dma.c, stm32f4xx_hal_rcc.c и т.д.
+file(GLOB HAL_SOURCES "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
+
 # Исходные файлы проекта
 target_sources(UART_DRIVER PRIVATE
-    # Основные системные файлы, HAL и стартовый файл (находятся в Core/Src)
+    # Основные системные файлы, пользовательские прерывания и стартовый файл
     Core/Src/main.cpp
     Core/Src/stm32f4xx_hal_msp.c
     Core/Src/stm32f4xx_it.c
@@ -35,6 +39,9 @@ target_sources(UART_DRIVER PRIVATE
     Core/Src/protocol/src/diagnostics.cpp
     Core/Src/protocol/src/FSM_parser.cpp
     Core/Src/protocol/src/tx_manager.cpp
+
+    # Все исходники HAL
+    ${HAL_SOURCES}
 )
 
 # Пути к заголовочным файлам
