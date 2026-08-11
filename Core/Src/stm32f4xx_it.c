@@ -20,8 +20,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx_it.h"
 #include "main.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,9 +57,9 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-
 /* USER CODE BEGIN EV */
-
+extern UART_HandleTypeDef huart1;
+extern volatile bool g_data_received_event;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -185,5 +187,51 @@ void SysTick_Handler(void) {
 /******************************************************************************/
 
 /* USER CODE BEGIN 1 */
+
+/**
+ * @brief This function handles USART1 global interrupt.
+ */
+void USART1_IRQHandler(void) {
+  /* USER CODE BEGIN USART1_IRQn 0 */
+  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE)) {
+    __HAL_UART_CLEAR_IDLEFLAG(&huart1);
+    g_data_received_event = true;
+  }
+  /* USER CODE END USART1_IRQn 0 */
+  HAL_UART_IRQHandler(&huart1);
+  /* USER CODE BEGIN USART1_IRQn 1 */
+
+  /* USER CODE END USART1_IRQn 1 */
+}
+
+/**
+ * @brief This function handles DMA2 Stream 2 global interrupt (USART1 RX).
+ */
+void DMA2_Stream2_IRQHandler(void) {
+  /* USER CODE BEGIN DMA2_Stream2_IRQn 0 */
+
+  /* USER CODE END DMA2_Stream2_IRQn 0 */
+  if (huart1.hdmarx != NULL) {
+    HAL_DMA_IRQHandler(huart1.hdmarx);
+  }
+  /* USER CODE BEGIN DMA2_Stream2_IRQn 1 */
+
+  /* USER CODE END DMA2_Stream2_IRQn 1 */
+}
+
+/**
+ * @brief This function handles DMA2 Stream 7 global interrupt (USART1 TX).
+ */
+void DMA2_Stream7_IRQHandler(void) {
+  /* USER CODE BEGIN DMA2_Stream7_IRQn 0 */
+
+  /* USER CODE END DMA2_Stream7_IRQn 0 */
+  if (huart1.hdmatx != NULL) {
+    HAL_DMA_IRQHandler(huart1.hdmatx);
+  }
+  /* USER CODE BEGIN DMA2_Stream7_IRQn 1 */
+
+  /* USER CODE END DMA2_Stream7_IRQn 1 */
+}
 
 /* USER CODE END 1 */

@@ -104,6 +104,9 @@ inline uint16_t get_dma_rx_counter(void) {
 /**
  * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
  */
+/**
+ * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
+ */
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
   auto &stats = g_stats;
@@ -119,8 +122,22 @@ void on_frame_parsed(
         0x02,                // Тип (ACK)
         frame.seq_num,       // Возвращаем тот же seq_num
         0x00,          0x00, // Длина payload = 0
-        0x00,          0x00  // Заглушка CRC
+        0x00,          0x00 // Место под CRC (заполнится ниже)
     };
+
+    // 🚨 КРИТИЧЕСКИ ВАЖНО: Считаем реальный CRC кадра
+    // Предполагается, что в FSM_parser.hpp или frame.hpp у тебя есть эта
+    // функция. Считаем CRC начиная с 3-го байта (Версия) до конца Payload
+    // (длина = 5 байт заголовка + 0 байт данных)
+    uint16_t crc = protocol::calculate_crc16(&ack_frame[2], 5);
+
+    // Вписываем CRC в последние два байта (Little-Endian или Big-Endian -
+    // зависит от твоего протокола, в Python у тебя struct.pack(">H", crc) - это
+    // Big Endian)
+    ack_frame[7] = (crc >> 8) & 0xFF; // MSB
+    ack_frame[8] = crc & 0xFF;        // LSB
+
+    // Отправляем пакет в DMA
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
 
     // Бизнес-логика обработки валидного кадра
