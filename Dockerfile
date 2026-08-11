@@ -3,16 +3,25 @@ FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Устанавливаем ARM Toolchain, CMake, Make и Python
+# Устанавливаем базовые системные утилиты, CMake и распаковщики
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
-    gcc-arm-none-eabi \
-    g++-arm-none-eabi \
-    libstdc++-arm-none-eabi-newlib \
     python3 \
     python3-pip \
+    wget \
+    xz-utils \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Скачиваем и устанавливаем официальный ARM GNU Toolchain напрямую с сайта Arm
+RUN wget -O /tmp/arm-toolchain.tar.xz https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz && \
+    mkdir -p /opt/arm-toolchain && \
+    tar -xf /tmp/arm-toolchain.tar.xz -C /opt/arm-toolchain --strip-components=1 && \
+    rm /tmp/arm-toolchain.tar.xz
+
+# Добавляем компилятор в системный путь (PATH)
+ENV PATH="/opt/arm-toolchain/bin:$PATH"
 
 WORKDIR /app
 COPY . .
