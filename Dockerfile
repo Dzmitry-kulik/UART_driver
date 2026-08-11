@@ -1,5 +1,5 @@
 # --- Этап 1: Сборка и тестирование (Builder & Tester Stage) ---
-FROM ubuntu:24.04 AS builder
+FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
