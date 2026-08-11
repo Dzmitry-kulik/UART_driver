@@ -18,25 +18,16 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # 1. Собираем прошивку через Docker
+      # (Проверка размера уже вшита в Dockerfile! Если размер превышен, сборка упадет здесь)
       - name: Build Firmware via Docker
         run: |
           docker build --target artifacts --output type=local,dest=./build_out .
 
-      # 2. Устанавливаем ARM Toolchain прямо на раннер GitHub, чтобы использовать arm-none-eabi-size
-      - name: Install ARM Toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-none-eabi
-
-      # 3. Явный шаг проверки размера прошивки (теперь виден отдельным блоком в UI GitHub)
-      - name: Check Firmware Size
-        run: |
-          python3 scripts/check_size.py build_out/UART_DRIVER.elf
-
-      # 4. Загрузка готовой прошивки в артефакты
+      # 2. Загрузка готовой прошивки в артефакты
+      # Обрати внимание: убрали .elf, так как файл теперь называется просто UART_DRIVER
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stm32-firmware-elf
-          path: build_out/UART_DRIVER.elf
+          name: stm32-firmware
+          path: build_out/UART_DRIVER
           retention-days: 7
