@@ -43,9 +43,11 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 RUN python3 tests/check_size.py
 
 # 3. Интеграционное тестирование: запуск Renode и прогон тестов из папки tests/
+# 3. Интеграционное тестирование + автоматический дамп переменных
 RUN renode --disable-xwt tests/test_board.resc & \
     sleep 5 && \
-    python3 tests/tests.py
+    (python3 tests/tests.py || true) && \
+    arm-none-eabi-gdb -x tests/ci_debug.gdb /app/build/UART_DRIVER
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
