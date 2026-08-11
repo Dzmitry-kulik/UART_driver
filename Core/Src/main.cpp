@@ -19,16 +19,23 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "FSM_parser.hpp" // Добавлено для разрешения типа protocol::FrameParser
+
+// 1. СНАЧАЛА подключаем HAL, чтобы он определил все типы (UART_HandleTypeDef и
+// т.д.)
+#include "stm32f4xx_hal.h"
+
+#undef CRC
+
+// 3. И ТОЛЬКО ТЕПЕРЬ подключаем твои C++ классы
+#include "FSM_parser.hpp"
 #include "diagnostics.hpp"
 #include "frame.hpp"
-#include "stm32f4xx_hal.h" // HAL должен быть ДО C++ заголовков с forward declarations
 #include "tx_manager.hpp"
 #include <expected>
+
+/* USER CODE END Includes */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
