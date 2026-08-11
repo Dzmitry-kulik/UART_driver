@@ -24,16 +24,23 @@
 
 // 1. СНАЧАЛА подключаем HAL, чтобы он определил все типы (UART_HandleTypeDef и
 // т.д.)
-#include "stm32f4xx_hal.h"
-#include <main.h>
+/* Includes ------------------------------------------------------------------*/
+#include "main.h" // Обязательно в кавычках. Он подтянет HAL и Error_Handler()
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+// 1. Сразу же отменяем сишный макрос CRC, чтобы он не ломал твои enum class
 #undef CRC
 
-// 3. И ТОЛЬКО ТЕПЕРЬ подключаем твои C++ классы
+// 2. Подключаем твои C++ классы
 #include "FSM_parser.hpp"
 #include "diagnostics.hpp"
 #include "frame.hpp"
 #include "tx_manager.hpp"
 #include <expected>
+
+/* USER CODE END Includes */
 
 /* USER CODE END Includes */
 /* USER CODE END Includes */
