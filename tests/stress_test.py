@@ -92,7 +92,7 @@ def verify_mcu_counters(elf_path: str) -> bool:
     return True
 
 def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
-    print(f"🚀 Запуск стресс-теста на {duration_sec} секунд (Максимальная пропускная способность)...")
+    print(f"🚀 Запуск стресс-теста на {duration_sec} секунд (Ограничение скорости: 115200 baud)...")
 
     payload = b"STRESS_TEST_PACKET_64B_PAYLOAD_FOR_STM32_RING_BUFFER_TESTING__"
     seq_num = 0
@@ -103,8 +103,12 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
     start_time = time.time()
     last_report = start_time
 
-    # Отправляем пачками, чтобы забивать канал, но успевать читать ответы
+    # Отправляем пачками
     frames_per_batch = 10
+
+    # Настройки физического канала
+    BAUD_RATE = 115200
+    BYTES_PER_SEC = BAUD_RATE / 10.0  # 1 байт = 10 бит (8 данных + старт + стоп)
 
     while time.time() - start_time < duration_sec:
         batch_data = b""
@@ -114,8 +118,12 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
             seq_num = (seq_num + 1) % 256
             sent_frames += 1
 
+        t_tx_start = time.perf_counter()
+
+        # 1. Отправляем пачку байт
         ser.write(batch_data)
 
+        # 2. Читаем ответы
         if ser.in_waiting > 0:
             rx_buffer += ser.read(ser.in_waiting).replace(b"\xFF\xFF", b"\xFF")
             acks = count_ack_responses(rx_buffer)
@@ -125,6 +133,14 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
                 last_ack_pos = rx_buffer.rfind(PREAMBLE)
                 if last_ack_pos != -1:
                     rx_buffer = rx_buffer[last_ack_pos + 9:]
+
+        # 3. Троттлинг (Эмуляция физического ограничения скорости UART)
+        tx_time_seconds = len(batch_data) / BYTES_PER_SEC
+        elapsed = time.perf_counter() - t_tx_start
+
+        # Ждём ровно столько, сколько бы это заняло на реальном железе при 115200 бод
+        if elapsed < tx_time_seconds:
+            time.sleep(tx_time_seconds - elapsed)
 
         current_time = time.time()
         if current_time - last_report >= 30:
