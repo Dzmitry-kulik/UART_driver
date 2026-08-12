@@ -60,6 +60,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stm32-firmware-verified
-          # ИСПРАВЛЕНИЕ: Добавляем расширение .elf к пути, либо используем UART_DRIVER.*
           path: build_out/UART_DRIVER.elf
+          retention-days: 7
+
+      # ДОБАВЛЕНО: Загрузка графика бенчмарка в артефакты
+      - name: Upload Benchmark Chart
+        uses: actions/upload-artifact@v4
+        with:
+          name: throughput-benchmark-chart
+          path: build_out/benchmark_results.png
           retention-days: 7

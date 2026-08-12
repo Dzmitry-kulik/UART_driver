@@ -3,8 +3,7 @@ FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Устанавливаем базовые системные утилиты, gcc-12/g++-12 (для C++23 std::expected),
-# утилиты для покрытия (gcovr), CMake, Python, зависимости Renode и gdb-multiarch
+# ДОБАВЛЕНО: python3-matplotlib для генерации графиков
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
@@ -13,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-serial \
+    python3-matplotlib \
     wget \
     xz-utils \
     ca-certificates \
@@ -22,26 +22,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcovr \
     && rm -rf /var/lib/apt/lists/*
 
-# Создаем системные ссылки, чтобы gcc, g++ и gcov по умолчанию указывали на версию 12
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
     --slave /usr/bin/g++ g++ /usr/bin/g++-12 \
     --slave /usr/bin/gcov gcov /usr/bin/gcov-12
 
 ENV CC=gcc-12 CXX=g++-12
 
-# Скачиваем и устанавливаем официальный ARM GNU Toolchain
 RUN wget -O /tmp/arm-toolchain.tar.xz https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz && \
     mkdir -p /opt/arm-toolchain && \
     tar -xf /tmp/arm-toolchain.tar.xz -C /opt/arm-toolchain --strip-components=1 && \
     rm /tmp/arm-toolchain.tar.xz
 
-# Скачиваем и устанавливаем стабильный Portable-релиз Renode
 RUN wget https://builds.renode.io/renode-latest.linux-portable.tar.gz -O /tmp/renode.tar.gz && \
     mkdir -p /opt/renode && \
     tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1 && \
     rm /tmp/renode.tar.gz
 
-# Добавляем компилятор ARM и Renode в системный PATH
 ENV PATH="/opt/arm-toolchain/bin:/opt/renode:$PATH"
 
 WORKDIR /app
@@ -61,16 +57,17 @@ RUN cmake -B build_host -DENABLE_COVERAGE=ON && \
 RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-DCI_RENODE_TEST" -DCMAKE_C_FLAGS="-DCI_RENODE_TEST" && \
     cmake --build build
 
-# Проверка размера прошивки через скрипт из папки tests/
 RUN python3 tests/check_size.py
 
 # ==============================================================================
-# ШАГ 3: Интеграционный прогон: Функциональные + 5-минутный Стресс-тест в Renode
+# ШАГ 3: Интеграционный прогон: Функционал + Бенчмарк + Стресс-тест
 # ==============================================================================
+# ДОБАВЛЕНО: Вызов tests/benchmark.py и сохранение графика в папку build/
 RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 5 && \
     python3 tests/tests_renode.py --url socket://localhost:4321 --timeout 0.5 && \
-    python3 tests/stress_test.py --url socket://localhost:4321 --duration 30 ; \
+    python3 tests/benchmark.py --url socket://localhost:4321 --output build/benchmark_results.png && \
+    python3 tests/stress_test.py --url socket://localhost:4321 --duration 300 ; \
     TEST_RESULT=$? ; \
     gdb-multiarch build/UART_DRIVER.elf -batch -x tests/ci_debug.gdb ; \
     kill $PID ; \
@@ -79,5 +76,6 @@ RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
 
-# Копируем проверенный и собранный бинарник наружу
 COPY --from=builder /app/build/UART_DRIVER.elf /
+# ДОБАВЛЕНО: Экспорт сгенерированного графика наружу
+COPY --from=builder /app/build/benchmark_results.png /
