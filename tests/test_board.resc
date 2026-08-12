@@ -6,8 +6,10 @@ sysbus.gpioPortA SilenceRange 0x00 0x100
 emulation CreateServerSocketTerminal 1234 "uart_socket"
 connector Connect sysbus.usart1 uart_socket
 
+# Жестко прописываем запуск GDB-сервера
 machine StartGdbServer 3333
 
-sysbus LoadELF @/app/build/UART_DRIVER.elf
+# 🚨 ИСПРАВЛЕНИЕ ПУТИ: Загружаем ELF, используя путь относительно корня проекта
+sysbus LoadELF $CWD/build/UART_DRIVER.elf
 
 start
