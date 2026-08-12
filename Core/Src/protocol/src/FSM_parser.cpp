@@ -2,6 +2,8 @@
 #include "crc16.hpp"
 
 namespace protocol {
+
+// Максимальный размер payload, совпадающий с Python (512 байт)
 constexpr size_t MAX_ALLOWED_PAYLOAD_SIZE = 512;
 
 FrameParser::FrameParser(DiagnosticsStats &stats, FrameCallback on_frame_cb)
@@ -34,7 +36,7 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
   switch (state_) {
 
   // ====================================================================
-  // 1. WAIT_SYNC: Поиск преамбулы
+  // 1. WAIT_SYNC: Поиск преамбулы (0xAA 0x55)
   // ====================================================================
   case ParserState::WAIT_SYNC: {
     if (byte == PREAMBLE_BYTES[sync_index_]) {
@@ -49,7 +51,7 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
   }
 
   // ====================================================================
-  // 2. HEADER: Чтение версии, типа, seq_num и длины payload
+  // 2. HEADER: Чтение версии, типа, seq_num и 2-байтовой длины payload
   // ====================================================================
   case ParserState::HEADER: {
     if (bytes_read_ == 0) {
@@ -57,23 +59,19 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
     } else if (bytes_read_ == 1) {
       rx_frame_.type = static_cast<MessageType>(byte);
     } else if (bytes_read_ == 2) {
-      rx_frame_.seq_num = byte; // <--- Считываем seq_num
-    }
-#if PAYLOAD_LEN_SIZE == 2
-    else if (bytes_read_ == 3) {
-      rx_frame_.payload_len = static_cast<uint16_t>(byte << 8); // High Byte
+      rx_frame_.seq_num = byte;
+    } else if (bytes_read_ == 3) {
+      // Читаем длину в формате Big-Endian (MSB)
+      rx_frame_.payload_len = static_cast<uint16_t>(byte << 8);
     } else if (bytes_read_ == 4) {
-      rx_frame_.payload_len |= byte; // Low Byte
+      // Читаем длину в формате Big-Endian (LSB)
+      rx_frame_.payload_len |= byte;
     }
-#else
-    else if (bytes_read_ == 3) {
-      rx_frame_.payload_len = byte;
-    }
-#endif
 
     bytes_read_++;
 
-    if (bytes_read_ == FrameHeader::size()) {
+    // Заголовок в нашем протоколе всегда равен 5 байтам
+    if (bytes_read_ == 5) {
       // Защита от переполнения памяти МК
       if (rx_frame_.payload_len > MAX_ALLOWED_PAYLOAD_SIZE) {
         stats_.length_errors++;
@@ -110,19 +108,16 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
   }
 
   // ====================================================================
-  // 4. CRC: Вычитывание и валидация CRC16
+  // 4. CRC: Вычитывание 2-байтовой суммы (Big-Endian) и валидация
   // ====================================================================
   case ParserState::CRC: {
     if (bytes_read_ == 0) {
-      rx_crc_ = static_cast<uint16_t>(byte << 8);
+      rx_crc_ = static_cast<uint16_t>(byte << 8); // MSB
       bytes_read_++;
     } else if (bytes_read_ == 1) {
-      rx_crc_ |= byte;
+      rx_crc_ |= byte; // LSB
 
       if (validate_crc()) {
-        rx_frame_.crc16 = rx_crc_;
-        stats_.rx_frames_ok++;
-
         transition_to(ParserState::DISPATCH);
         return process_byte(0); // Запуск DISPATCH
       } else {
@@ -140,30 +135,34 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
   }
 
   // ====================================================================
-  // 5. DISPATCH: Передача кадра в приложение
+  // 5. DISPATCH: Передача валидного кадра в приложение (main.cpp)
   // ====================================================================
   case ParserState::DISPATCH: {
     if (on_frame_cb_) {
-      on_frame_cb_(rx_frame_); // Передача валидного Frame
+      on_frame_cb_(rx_frame_);
     }
     reset();
     break;
   }
   }
 
-  return {}; // Возврат успешного std::expected<void, ParseError>
+  return {}; // Успешный разбор текущего байта
 }
 
 bool FrameParser::validate_crc() {
+  // 1. Создаем буфер для расчета (5 байт заголовка + payload)
   std::vector<uint8_t> crc_buffer;
   crc_buffer.reserve(5 + rx_frame_.payload.size());
+
+  // 2. Формируем заголовок в Big-Endian (строго совпадает с Python
+  // struct.pack(">BBBH"))
   crc_buffer.push_back(rx_frame_.version);
   crc_buffer.push_back(static_cast<uint8_t>(rx_frame_.type));
   crc_buffer.push_back(rx_frame_.seq_num);
   crc_buffer.push_back(
-      static_cast<uint8_t>((rx_frame_.payload_len >> 8) & 0xFF)); // MSB
+      static_cast<uint8_t>((rx_frame_.payload_len >> 8) & 0xFF)); // Длина MSB
   crc_buffer.push_back(
-      static_cast<uint8_t>(rx_frame_.payload_len & 0xFF)); // LSB
+      static_cast<uint8_t>(rx_frame_.payload_len & 0xFF)); // Длина LSB
 
   // 3. Добавляем полезную нагрузку
   if (!rx_frame_.payload.empty()) {
@@ -175,8 +174,8 @@ bool FrameParser::validate_crc() {
   uint16_t calculated_crc =
       Crc16::calculate(crc_buffer.data(), crc_buffer.size());
 
-  // 5. Сравниваем с принятым rx_crc_ (собранным как (byte_high << 8) |
-  // byte_low)
+  // 5. Сравниваем с принятым rx_crc_
   return calculated_crc == rx_crc_;
 }
+
 } // namespace protocol
