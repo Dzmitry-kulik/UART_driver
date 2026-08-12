@@ -3,10 +3,13 @@ FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Устанавливаем базовые системные утилиты, CMake, Python, зависимости Renode и gdb-multiarch
+# Устанавливаем базовые системные утилиты, gcc-12/g++-12 (для C++23 std::expected),
+# утилиты для покрытия (gcovr), CMake, Python, зависимости Renode и gdb-multiarch
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
+    gcc-12 \
+    g++-12 \
     python3 \
     python3-pip \
     python3-serial \
@@ -16,7 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mono-complete \
     gtk-sharp2 \
     gdb-multiarch \
+    gcovr \
     && rm -rf /var/lib/apt/lists/*
+
+# Назначаем GCC 12 основным компилятором хоста
+ENV CC=gcc-12 CXX=g++-12
 
 # Скачиваем и устанавливаем официальный ARM GNU Toolchain
 RUN wget -O /tmp/arm-toolchain.tar.xz https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz && \
@@ -36,14 +43,28 @@ ENV PATH="/opt/arm-toolchain/bin:/opt/renode:$PATH"
 WORKDIR /app
 COPY . .
 
-# 1. Сборка проекта с отладочными символами (-g)
+# ==============================================================================
+# ШАГ 1: Запуск Host Unit-тестов и проверка Code Coverage (>= 80%)
+# ==============================================================================
+# Если покрытие FSM_parser.cpp окажется ниже 80%, gcovr вернет exit code 2,
+# что остановит сборку Docker-образа и заблокирует CI.
+RUN cmake -B build_host -DENABLE_COVERAGE=ON && \
+    cmake --build build_host && \
+    ./build_host/fsm_unit_tests && \
+    gcovr -r . --filter "Core/Src/protocol/src/FSM_parser.cpp" --fail-under-line 80
+
+# ==============================================================================
+# ШАГ 2: Сборка прошивки для STM32 (ARM)
+# ==============================================================================
 RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-DCI_RENODE_TEST" -DCMAKE_C_FLAGS="-DCI_RENODE_TEST" && \
     cmake --build build
 
-# 2. Проверка размера прошивки через скрипт из папки tests/
+# Проверка размера прошивки через скрипт из папки tests/
 RUN python3 tests/check_size.py
 
-# 3. Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
+# ==============================================================================
+# ШАГ 3: Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
+# ==============================================================================
 RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 5 && \
     python3 tests/tests_renode.py --url socket://localhost:4321 --timeout 0.5 ; \
@@ -55,9 +76,5 @@ RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
 
-# ИСПРАВЛЕНИЕ: Копируем бинарник с явным указанием расширения .elf
+# Копируем проверенный и собранный бинарник наружу
 COPY --from=builder /app/build/UART_DRIVER.elf /
-
-# Если CMake также генерирует .bin и .hex, раскомментируйте строки ниже:
-# COPY --from=builder /app/build/UART_DRIVER.bin /
-# COPY --from=builder /app/build/UART_DRIVER.hex /

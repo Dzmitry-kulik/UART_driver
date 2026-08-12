@@ -2,81 +2,113 @@ cmake_minimum_required(VERSION 3.22)
 
 project(UART_DRIVER C CXX ASM)
 
-set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_SYSTEM_PROCESSOR cortex-m4)
-
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Опции компиляции и линковки для STM32F411CEU6
-set(CPU_OPTIONS
-    -mcpu=cortex-m4
-    -mfpu=fpv4-sp-d16
-    -mfloat-abi=hard
-    -mthumb
-)
+# Опция для включения сборки юнит-тестов с измерением покрытия (Coverage)
+option(ENABLE_COVERAGE "Enable code coverage reporting for host unit tests" OFF)
 
-# Объявляем таргет С РАСШИРЕНИЕМ .elf
-add_executable(UART_DRIVER.elf)
+if(ENABLE_COVERAGE)
+    # ==============================================================================
+    # РЕЖИМ 1: СБОРКА HOST UNIT-ТЕСТОВ С ПОКРЫТИЕМ (x86 GCC)
+    # ==============================================================================
+    # Флаги профилирования gcov/gcovr
+    add_compile_options(--coverage -O0 -g)
+    add_link_options(--coverage)
 
-# Автоматически находим все исходные файлы HAL-библиотеки
-file(GLOB HAL_SOURCES "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
+    # Исполняемый файл юнит-тестов для ПК
+    add_executable(fsm_unit_tests
+        tests/unit/test_fsm_parser.cpp
+        Core/Src/protocol/src/FSM_parser.cpp
+        Core/Src/protocol/src/diagnostics.cpp
+        Core/Src/protocol/src/circular_buf.cpp
+    )
 
-# Исходные файлы проекта
-target_sources(UART_DRIVER.elf PRIVATE
-    # Основные системные файлы, пользовательские прерывания и стартовый файл
-    Core/Src/main.cpp
-    Core/Src/peripherals.c          # Добавлено (исправление под твою структуру)
-    Core/Src/stm32f4xx_hal_msp.c
-    Core/Src/stm32f4xx_it.c
-    Core/Src/syscalls.c
-    Core/Src/sysmem.c
-    Core/Src/system_stm32f4xx.c
-    Core/Startup/startup_stm32f411ceux.s
+    # Активация макроса подмены HAL_GetTick на ПК
+    target_compile_definitions(fsm_unit_tests PRIVATE HOST_UNIT_TEST)
 
-    # Файлы протокола
-    Core/Src/protocol/src/circular_buf.cpp
-    Core/Src/protocol/src/diagnostics.cpp
-    Core/Src/protocol/src/FSM_parser.cpp
-    Core/Src/protocol/src/tx_manager.cpp
+    # Заголовочные файлы для хост-тестов
+    target_include_directories(fsm_unit_tests PRIVATE
+        Core/Inc
+        Core/Src/protocol/inc
+    )
 
-    # Все исходники HAL
-    ${HAL_SOURCES}
-)
+else()
+    # ==============================================================================
+    # РЕЖИМ 2: СБОРКА ПРОШИВКИ ДЛЯ STM32F411CEU6 (ARM Cortex-M4)
+    # ==============================================================================
+    set(CMAKE_SYSTEM_NAME Generic)
+    set(CMAKE_SYSTEM_PROCESSOR cortex-m4)
 
-# Пути к заголовочным файлам
-target_include_directories(UART_DRIVER.elf PRIVATE
-    Core/Inc
-    Core/Src/protocol/inc           # Исправлено (теперь соответствует структуре папок)
-    Drivers/STM32F4xx_HAL_Driver/Inc
-    Drivers/STM32F4xx_HAL_Driver/Inc/Legacy
-    Drivers/CMSIS/Device/ST/STM32F4xx/Include
-    Drivers/CMSIS/Include
-)
+    # Опции компиляции и линковки для STM32F411CEU6
+    set(CPU_OPTIONS
+        -mcpu=cortex-m4
+        -mfpu=fpv4-sp-d16
+        -mfloat-abi=hard
+        -mthumb
+    )
 
-# Макросы препроцессора
-target_compile_definitions(UART_DRIVER.elf PRIVATE
-    STM32F411xE
-    USE_HAL_DRIVER
-)
+    # Объявляем таргет С РАСШИРЕНИЕМ .elf
+    add_executable(UART_DRIVER.elf)
 
-# Флаги компилятора
-target_compile_options(UART_DRIVER.elf PRIVATE
-    ${CPU_OPTIONS}
-    -Wno-unused-parameter
-    -fdata-sections
-    -ffunction-sections
-    # Отключение rtti и exceptions применяется ТОЛЬКО для файлов C++
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
-)
+    # Автоматически находим все исходные файлы HAL-библиотеки
+    file(GLOB HAL_SOURCES "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
 
-# Флаги линковщика
-target_link_options(UART_DRIVER.elf PRIVATE
-    ${CPU_OPTIONS}
-    -specs=nano.specs
-    -T${CMAKE_CURRENT_SOURCE_DIR}/STM32F411CEUX_FLASH.ld
-    -Wl,-Map=${PROJECT_NAME}.map,--cref
-    -Wl,--gc-sections
-)
+    # Исходные файлы проекта
+    target_sources(UART_DRIVER.elf PRIVATE
+        # Основные системные файлы, пользовательские прерывания и стартовый файл
+        Core/Src/main.cpp
+        Core/Src/peripherals.c
+        Core/Src/stm32f4xx_hal_msp.c
+        Core/Src/stm32f4xx_it.c
+        Core/Src/syscalls.c
+        Core/Src/sysmem.c
+        Core/Src/system_stm32f4xx.c
+        Core/Startup/startup_stm32f411ceux.s
+
+        # Файлы протокола
+        Core/Src/protocol/src/circular_buf.cpp
+        Core/Src/protocol/src/diagnostics.cpp
+        Core/Src/protocol/src/FSM_parser.cpp
+        Core/Src/protocol/src/tx_manager.cpp
+
+        # Все исходники HAL
+        ${HAL_SOURCES}
+    )
+
+    # Пути к заголовочным файлам
+    target_include_directories(UART_DRIVER.elf PRIVATE
+        Core/Inc
+        Core/Src/protocol/inc
+        Drivers/STM32F4xx_HAL_Driver/Inc
+        Drivers/STM32F4xx_HAL_Driver/Inc/Legacy
+        Drivers/CMSIS/Device/ST/STM32F4xx/Include
+        Drivers/CMSIS/Include
+    )
+
+    # Макросы препроцессора
+    target_compile_definitions(UART_DRIVER.elf PRIVATE
+        STM32F411xE
+        USE_HAL_DRIVER
+    )
+
+    # Флаги компилятора
+    target_compile_options(UART_DRIVER.elf PRIVATE
+        ${CPU_OPTIONS}
+        -Wno-unused-parameter
+        -fdata-sections
+        -ffunction-sections
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+    )
+
+    # Флаги линковщика
+    target_link_options(UART_DRIVER.elf PRIVATE
+        ${CPU_OPTIONS}
+        -specs=nano.specs
+        -T${CMAKE_CURRENT_SOURCE_DIR}/STM32F411CEUX_FLASH.ld
+        -Wl,-Map=${PROJECT_NAME}.map,--cref
+        -Wl,--gc-sections
+    )
+endif()
