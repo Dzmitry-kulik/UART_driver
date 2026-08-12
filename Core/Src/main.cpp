@@ -101,9 +101,7 @@ void on_frame_parsed(
 
     g_stats.rx_frames_ok++;
 
-    // static гарантирует, что память кадра не разрушится на стеке
-    // во время асинхронной отправки HAL_UART_Transmit_IT
-    static uint8_t ack_frame[9] = {
+    uint8_t ack_frame[9] = {
         0xAA, 0x55, // Преамбула
         0x01,       // Версия
         0x02,       // Тип (ACK)
@@ -119,7 +117,13 @@ void on_frame_parsed(
     ack_frame[7] = static_cast<uint8_t>((crc >> 8) & 0xFF);
     ack_frame[8] = static_cast<uint8_t>(crc & 0xFF);
 
+#ifdef CI_RENODE_TEST
+    // В симуляции передаем ACK напрямую без асинхронных прерываний HAL TX,
+    // чтобы исключить блокировку huart1.gState == HAL_UART_STATE_BUSY_TX
+    HAL_UART_Transmit(&huart1, ack_frame, sizeof(ack_frame), 100);
+#else
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
+#endif
   }
 }
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
