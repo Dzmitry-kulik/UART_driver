@@ -247,18 +247,9 @@ int main(void) {
         dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
       }
     }
-
-#ifdef CI_RENODE_TEST
-    // --- СТРАХОВКА ДЛЯ RENODE ---
-    // Если виртуальный DMA проигнорировал данные, вычитываем их вручную
-    if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE)) {
-      uint8_t byte = static_cast<uint8_t>(huart1.Instance->DR & 0x00FF);
-      g_parser.process_byte(byte);
-    }
-#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
+  /* USER CODE END 3 */
 }
-/* USER CODE END 3 */

@@ -1,8 +1,6 @@
 #include "tx_manager.hpp"
 #include "main.h"
 
-extern UART_HandleTypeDef huart1;
-
 namespace protocol {
 
 UartTxManager::UartTxManager(UART_HandleTypeDef &huart)
@@ -31,7 +29,7 @@ bool UartTxManager::send_bytes(const uint8_t *data, size_t len) {
 void UartTxManager::on_tx_complete_isr() {
   is_transmitting_ = false;
 
-  // Если в очереди есть данные, запускаем следующий блок
+  // Если в очереди остались данные, запускаем отправку следующего блока
   if (!tx_queue_.empty()) {
     start_dma_transmission();
   }
@@ -40,7 +38,7 @@ void UartTxManager::on_tx_complete_isr() {
 void UartTxManager::start_dma_transmission() {
   size_t chunk_size = 0;
 
-  // Вычитываем данные из кольцевого буфера во временный линейный буфер
+  // Вычитываем данные из кольцевой очереди во временный линейный буфер
   while (chunk_size < DMA_CHUNK_SIZE &&
          tx_queue_.pop(dma_tx_chunk_[chunk_size])) {
     chunk_size++;
@@ -50,18 +48,16 @@ void UartTxManager::start_dma_transmission() {
     is_transmitting_ = true;
 
 #ifdef CI_RENODE_TEST
-    // Эмулятор Renode: используем прерывания (IT), так как он не умеет в DMA TX
-    if (HAL_UART_Transmit_IT(&huart1, dma_tx_chunk_,
+    // Эмулятор Renode: отправка по прерываниям (IT)
+    if (HAL_UART_Transmit_IT(&huart_, dma_tx_chunk_,
                              static_cast<uint16_t>(chunk_size)) != HAL_OK) {
-      is_transmitting_ =
-          false; // Сбрасываем флаг при сбое железа, спасая FSM от зависания
+      is_transmitting_ = false; // Сброс флага при сбое передачи
     }
 #else
-    // Реальное железо: летим на полной скорости через DMA
-    if (HAL_UART_Transmit_DMA(&huart1, dma_tx_chunk_,
+    // Реальное железо: отправка через DMA
+    if (HAL_UART_Transmit_DMA(&huart_, dma_tx_chunk_,
                               static_cast<uint16_t>(chunk_size)) != HAL_OK) {
-      is_transmitting_ =
-          false; // Сбрасываем флаг при сбое железа, спасая FSM от зависания
+      is_transmitting_ = false; // Сброс флага при сбое передачи
     }
 #endif
   }
