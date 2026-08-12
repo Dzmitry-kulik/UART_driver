@@ -1,6 +1,7 @@
 #include "FSM_parser.hpp"
 #include "crc16.hpp"
 #include "stm32f4xx_hal.h"
+#undef CRC
 
 namespace protocol {
 
@@ -33,8 +34,6 @@ void FrameParser::process_buffer(const uint8_t *buffer, size_t size) {
 }
 
 void FrameParser::check_timeout(uint32_t current_time_ms, uint32_t timeout_ms) {
-  // Если парсер находится в процессе сборки кадра, но новые байты долго не
-  // поступают
   if (state_ != ParserState::WAIT_SYNC &&
       (current_time_ms - last_byte_time_ms_ > timeout_ms)) {
     stats_.timeout_errors++;
