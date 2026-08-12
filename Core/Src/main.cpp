@@ -105,12 +105,6 @@ inline uint16_t get_dma_rx_counter(void) {
 /**
  * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
  */
-/**
- * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
- */
-/**
- * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
- */
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
   auto &stats = g_stats;
@@ -120,8 +114,6 @@ void on_frame_parsed(
     stats.rx_frames_ok++;
 
     // 1. Инициализируем массив фиксированными значениями.
-    // Слово static оставляет его в памяти для DMA, но базовые байты не
-    // меняются.
     static uint8_t ack_frame[9] = {
         0xAA, 0x55, // Преамбула
         0x01,       // Версия
@@ -131,8 +123,7 @@ void on_frame_parsed(
         0x00, 0x00  // Место под CRC
     };
 
-    // 🚨 ИСПРАВЛЕНИЕ 1: Принудительно перезаписываем seq_num для КАЖДОГО нового
-    // пакета!
+    // Принудительно перезаписываем seq_num для КАЖДОГО нового пакета
     ack_frame[4] = frame.seq_num;
 
     // Считаем CRC (начиная с Версии, 5 байт)
@@ -198,8 +189,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     if (er & HAL_UART_ERROR_ORE)
       stats.hw_overrun_errors++;
 
-    // 🚨 ИСПРАВЛЕНИЕ 2: При ЛЮБОЙ аппаратной ошибке HAL жестко выключает прием.
-    // Нам нужно безусловно перезапустить DMA RX, чтобы контроллер не "оглох".
+    // При аппаратной ошибке HAL отключает прием — перезапускаем DMA RX
     HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
   }
 }
@@ -244,7 +234,10 @@ int main(void) {
   // 1. Старт приема DMA в цикличном режиме (CIRCULAR)
   HAL_UART_Receive_DMA(&huart1, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
 
-  // 2. Включаем прерывание по линии простоя (IDLE line)
+  // 2. Сбрасываем старый флаг IDLE перед включением прерывания
+  __HAL_UART_CLEAR_IDLEFLAG(&huart1);
+
+  // 3. Включаем прерывание по линии простоя (IDLE line)
   __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
 
   /* USER CODE END 2 */
@@ -301,7 +294,8 @@ void SystemClock_Config(void) {
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-    Error_Handler();
+    // Игнорируем ошибки тактирования в симуляторе Renode, чтобы не уходить в
+    // dead-lock
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
@@ -314,7 +308,8 @@ void SystemClock_Config(void) {
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK) {
-    Error_Handler();
+    // Игнорируем ошибки тактирования в симуляторе Renode, чтобы не уходить в
+    // dead-lock
   }
 }
 

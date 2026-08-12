@@ -17,14 +17,14 @@ set(CPU_OPTIONS
     -mthumb
 )
 
-add_executable(UART_DRIVER)
+# ✅ Объявляем таргет С РАСШИРЕНИЕМ .elf
+add_executable(UART_DRIVER.elf)
 
 # Автоматически находим все исходные файлы HAL-библиотеки
-# Это подтянет stm32f4xx_hal_uart.c, stm32f4xx_hal_dma.c, stm32f4xx_hal_rcc.c и т.д.
 file(GLOB HAL_SOURCES "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
 
 # Исходные файлы проекта
-target_sources(UART_DRIVER PRIVATE
+target_sources(UART_DRIVER.elf PRIVATE
     # Основные системные файлы, пользовательские прерывания и стартовый файл
     Core/Src/main.cpp
     Core/Src/stm32f4xx_hal_msp.c
@@ -34,7 +34,7 @@ target_sources(UART_DRIVER PRIVATE
     Core/Src/system_stm32f4xx.c
     Core/Startup/startup_stm32f411ceux.s
 
-    # Файлы протокола (внутри Core/Src/protocol/src)
+    # Файлы протокола
     Core/Src/protocol/src/circular_buf.cpp
     Core/Src/protocol/src/diagnostics.cpp
     Core/Src/protocol/src/FSM_parser.cpp
@@ -45,7 +45,7 @@ target_sources(UART_DRIVER PRIVATE
 )
 
 # Пути к заголовочным файлам
-target_include_directories(UART_DRIVER PRIVATE
+target_include_directories(UART_DRIVER.elf PRIVATE
     Core/Inc
     Core/Src/protocol/inc
     Drivers/STM32F4xx_HAL_Driver/Inc
@@ -55,13 +55,13 @@ target_include_directories(UART_DRIVER PRIVATE
 )
 
 # Макросы препроцессора
-target_compile_definitions(UART_DRIVER PRIVATE
+target_compile_definitions(UART_DRIVER.elf PRIVATE
     STM32F411xE
     USE_HAL_DRIVER
 )
 
 # Флаги компилятора
-target_compile_options(UART_DRIVER PRIVATE
+target_compile_options(UART_DRIVER.elf PRIVATE
     ${CPU_OPTIONS}
     -Wno-unused-parameter
     -fdata-sections
@@ -72,7 +72,7 @@ target_compile_options(UART_DRIVER PRIVATE
 )
 
 # Флаги линковщика
-target_link_options(UART_DRIVER PRIVATE
+target_link_options(UART_DRIVER.elf PRIVATE
     ${CPU_OPTIONS}
     -specs=nano.specs
     -T${CMAKE_CURRENT_SOURCE_DIR}/STM32F411CEUX_FLASH.ld
