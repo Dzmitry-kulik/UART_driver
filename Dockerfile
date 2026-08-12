@@ -45,12 +45,14 @@ RUN python3 tests/check_size.py
 
 # 3. Интеграционное тестирование + автоматический дамп переменных через gdb-multiarch
 # 3. Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
-RUN renode --disable-xwt tests/test_board.resc & \
-    PID=$! && \
+# 3. Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
+RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 3 && \
-    python3 tests/tests_renode.py --timeout 0.5 && \
-    gdb-multiarch build/UART_DRIVER.elf -batch -x tests/ci_debug.gdb && \
-    kill $PID
+    python3 tests/tests_renode.py --timeout 0.5 ; \
+    TEST_RESULT=$? ; \
+    gdb-multiarch build/UART_DRIVER.elf -batch -x tests/ci_debug.gdb ; \
+    kill $PID ; \
+    exit $TEST_RESULT
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
