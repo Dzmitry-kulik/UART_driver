@@ -3,11 +3,12 @@ FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Устанавливаем системные пакеты, g++ для хост-тестов и gcovr для отчета покрытия
+# ИСПРАВЛЕНИЕ: Устанавливаем gcc-12 и g++-12 вместо g++ по умолчанию
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
-    g++ \
+    gcc-12 \
+    g++-12 \
     python3 \
     python3-pip \
     python3-serial \
@@ -19,6 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gdb-multiarch \
     gcovr \
     && rm -rf /var/lib/apt/lists/*
+
+# ИСПРАВЛЕНИЕ: Указываем GCC 12 по умолчанию для сборки под Host (x86)
+ENV CC=gcc-12 CXX=g++-12
 
 # Скачиваем и устанавливаем ARM GNU Toolchain
 RUN wget -O /tmp/arm-toolchain.tar.xz https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz && \
@@ -41,8 +45,6 @@ COPY . .
 # ==============================================================================
 # ШАГ 1: Проверка покрытия логики FSM_parser.cpp (Host Unit Tests >= 80%)
 # ==============================================================================
-# Компилируем хостовый таргет под x86 GCC. Если покрытие ниже 80%, gcovr вернет exit code 2
-# и заблокирует дальнейшее выполнение Docker build.
 RUN cmake -B build_host -DENABLE_COVERAGE=ON && \
     cmake --build build_host && \
     ./build_host/fsm_unit_tests && \
