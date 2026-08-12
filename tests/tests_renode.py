@@ -18,7 +18,7 @@ class MsgType:
 
 
 def calculate_crc16(data: bytes) -> int:
-    """Точный аналог C++ CRC16 (XMODEM / CCITT)."""
+    """Точный аналог C++ CRC16 (XMODEM / CCITT-FALSE)."""
     crc = 0xFFFF
     for byte in data:
         crc ^= (byte << 8)
@@ -31,7 +31,7 @@ def calculate_crc16(data: bytes) -> int:
 
 
 def build_frame(version: int, msg_type: int, seq_num: int, payload: bytes, corrupt_crc: bool = False) -> bytes:
-    """Сборка кадра протокола."""
+    """Сборка кадра протокола (Header Big-Endian: >BBBH)."""
     payload_len = len(payload)
     header = struct.pack(">BBBH", version, msg_type, seq_num, payload_len)
     crc_data = header + payload
@@ -59,10 +59,7 @@ def count_ack_responses(data: bytes) -> int:
 
 
 def verify_mcu_readiness(ser: serial.Serial, timeout: float = 0.5, retries: int = 5) -> bool:
-    """
-    Проверяет, что прошивка внутри Renode действительно готова к обмену,
-    отправляя тестовый ping-кадр и ожидая ACK.
-    """
+    """Проверяет готовность прошивки MCU в Renode отправкой PING кадра."""
     ping_frame = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=0xFE, payload=b"PING")
 
     for _ in range(retries):
@@ -84,7 +81,7 @@ def verify_mcu_readiness(ser: serial.Serial, timeout: float = 0.5, retries: int 
 
 
 def generate_test_cases():
-    """Формирование 12 тестовых наборов."""
+    """Формирование 12 тестовых наборов в соответствии с ТЗ."""
     test_cases = []
 
     # 1. Штатный кадр (пустой payload)
@@ -189,7 +186,6 @@ def run_single_test(ser: serial.Serial, test: dict, timeout: float = 0.3) -> boo
     start_time = time.time()
     rx_buffer = b""
 
-    # Накапливаем ответ за отведённый таймаут
     while time.time() - start_time < timeout:
         if ser.in_waiting > 0:
             rx_buffer += ser.read(ser.in_waiting)
@@ -235,11 +231,9 @@ def main():
     ser = None
     connected_and_ready = False
 
-    # Попытки подключения и проверки готовности прошивки
     for attempt in range(1, args.retries + 1):
         try:
             ser = serial.serial_for_url(args.url, timeout=0.1)
-            # Проверяем не просто сокет, а реальный отклик прошивки на ping-кадр
             if verify_mcu_readiness(ser, timeout=args.timeout):
                 connected_and_ready = True
                 print("✅ Соединение с Renode и прошивкой MCU успешно установлено!\n")
@@ -259,7 +253,6 @@ def main():
     failed_count = 0
 
     with ser:
-        # Сливаем накопившийся стартовый лог/мусор
         ser.reset_input_buffer()
 
         for idx, tc in enumerate(test_cases, 1):
