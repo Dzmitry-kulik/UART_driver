@@ -177,8 +177,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
  * @brief  The application entry point.
  * @retval int
  */
-iint main(void) {
-  (void)g_read_pos; // Гарантирует сохранение символа g_read_pos для GDB
+int main(void) {
+  (void)g_read_pos;
 
   HAL_Init();
   SystemClock_Config();

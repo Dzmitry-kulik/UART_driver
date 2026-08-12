@@ -155,12 +155,8 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
 }
 
 bool FrameParser::validate_crc() {
-  // 1. Создаем временный буфер под заголовок (5 байт) + payload
   std::vector<uint8_t> crc_buffer;
   crc_buffer.reserve(5 + rx_frame_.payload.size());
-
-  // 2. Заполняем заголовок в Big-Endian формате (соответствует
-  // struct.pack(">BBBH"))
   crc_buffer.push_back(rx_frame_.version);
   crc_buffer.push_back(static_cast<uint8_t>(rx_frame_.type));
   crc_buffer.push_back(rx_frame_.seq_num);
