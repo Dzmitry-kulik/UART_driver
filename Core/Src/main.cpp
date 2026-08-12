@@ -101,7 +101,9 @@ void on_frame_parsed(
 
     g_stats.rx_frames_ok++;
 
-    uint8_t ack_frame[9] = {
+    // static гарантирует, что память кадра не разрушится на стеке
+    // во время асинхронной отправки HAL_UART_Transmit_IT
+    static uint8_t ack_frame[9] = {
         0xAA, 0x55, // Преамбула
         0x01,       // Версия
         0x02,       // Тип (ACK)
@@ -120,7 +122,6 @@ void on_frame_parsed(
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
   }
 }
-
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 extern "C" {
