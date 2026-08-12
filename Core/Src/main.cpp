@@ -93,8 +93,6 @@ void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
   if (result.has_value()) {
     const auto &frame = result.value();
-
-    // Фильтрация чужих версий протокола
     if (frame.version != 0x01) {
       return;
     }
@@ -118,8 +116,6 @@ void on_frame_parsed(
     ack_frame[8] = static_cast<uint8_t>(crc & 0xFF);
 
 #ifdef CI_RENODE_TEST
-    // В симуляции передаем ACK напрямую без асинхронных прерываний HAL TX,
-    // чтобы исключить блокировку huart1.gState == HAL_UART_STATE_BUSY_TX
     HAL_UART_Transmit(&huart1, ack_frame, sizeof(ack_frame), 100);
 #else
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));

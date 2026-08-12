@@ -22,7 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcovr \
     && rm -rf /var/lib/apt/lists/*
 
-# Назначаем GCC 12 основным компилятором хоста
+# Создаем системные ссылки, чтобы gcc, g++ и gcov по умолчанию указывали на версию 12
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
+    --slave /usr/bin/g++ g++ /usr/bin/g++-12 \
+    --slave /usr/bin/gcov gcov /usr/bin/gcov-12
+
 ENV CC=gcc-12 CXX=g++-12
 
 # Скачиваем и устанавливаем официальный ARM GNU Toolchain
@@ -46,12 +50,11 @@ COPY . .
 # ==============================================================================
 # ШАГ 1: Запуск Host Unit-тестов и проверка Code Coverage (>= 80%)
 # ==============================================================================
-# Если покрытие FSM_parser.cpp окажется ниже 80%, gcovr вернет exit code 2,
-# что остановит сборку Docker-образа и заблокирует CI.
+# Добавлен параметр --gcov-executable gcov-12 для явного указания версии gcov
 RUN cmake -B build_host -DENABLE_COVERAGE=ON && \
     cmake --build build_host && \
     ./build_host/fsm_unit_tests && \
-    gcovr -r . --filter "Core/Src/protocol/src/FSM_parser.cpp" --fail-under-line 80
+    gcovr --gcov-executable gcov-12 -r . --filter "Core/Src/protocol/src/FSM_parser.cpp" --fail-under-line 80
 
 # ==============================================================================
 # ШАГ 2: Сборка прошивки для STM32 (ARM)
