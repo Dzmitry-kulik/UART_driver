@@ -17,14 +17,13 @@
  ******************************************************************************
  */
 /* USER CODE END Header */
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
 /* USER CODE BEGIN Includes */
 
 /* USER CODE END Includes */
-extern DMA_HandleTypeDef hdma_usart1_tx;
-
-extern DMA_HandleTypeDef hdma_usart1_rx;
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
@@ -43,9 +42,9 @@ extern DMA_HandleTypeDef hdma_usart1_rx;
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-// Объявляем дескрипторы DMA статически, чтобы они сохранялись в памяти
-static DMA_HandleTypeDef hdma_usart1_rx;
-static DMA_HandleTypeDef hdma_usart1_tx;
+// 🚨 ИСПРАВЛЕНИЕ: Глобальные дескрипторы DMA (БЕЗ слов static и extern)
+DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart1_tx;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,11 +60,11 @@ static DMA_HandleTypeDef hdma_usart1_tx;
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
+
 /**
  * Initializes the Global MSP.
  */
 void HAL_MspInit(void) {
-
   /* USER CODE BEGIN MspInit 0 */
 
   /* USER CODE END MspInit 0 */
@@ -94,8 +93,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     /* USER CODE END USART1_MspInit 0 */
     /* Peripheral clock enable */
     __HAL_RCC_USART1_CLK_ENABLE();
-
     __HAL_RCC_GPIOA_CLK_ENABLE();
+
     /**USART1 GPIO Configuration
     PA9     ------> USART1_TX
     PA10     ------> USART1_RX
@@ -107,7 +106,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    /* USART1 DMA Init */
     /* USART1_TX Init */
     hdma_usart1_tx.Instance = DMA2_Stream7;
     hdma_usart1_tx.Init.Channel = DMA_CHANNEL_4;
@@ -122,7 +120,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     if (HAL_DMA_Init(&hdma_usart1_tx) != HAL_OK) {
       Error_Handler();
     }
-
     __HAL_LINKDMA(huart, hdmatx, hdma_usart1_tx);
 
     /* USART1_RX Init */
@@ -139,12 +136,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     if (HAL_DMA_Init(&hdma_usart1_rx) != HAL_OK) {
       Error_Handler();
     }
-
     __HAL_LINKDMA(huart, hdmarx, hdma_usart1_rx);
 
-    /* USART1 interrupt Init */
-    HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(USART1_IRQn);
     /* USER CODE BEGIN USART1_MspInit 1 */
 
     /* USER CODE END USART1_MspInit 1 */
@@ -175,8 +168,6 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *huart) {
     HAL_DMA_DeInit(huart->hdmatx);
     HAL_DMA_DeInit(huart->hdmarx);
 
-    /* USART1 interrupt DeInit */
-    HAL_NVIC_DisableIRQ(USART1_IRQn);
     /* USER CODE BEGIN USART1_MspDeInit 1 */
 
     /* USER CODE END USART1_MspDeInit 1 */

@@ -2,7 +2,6 @@
 #include "crc16.hpp"
 
 namespace protocol {
-
 constexpr size_t MAX_ALLOWED_PAYLOAD_SIZE = 512;
 
 FrameParser::FrameParser(DiagnosticsStats &stats, FrameCallback on_frame_cb)
