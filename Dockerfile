@@ -50,7 +50,6 @@ COPY . .
 # ==============================================================================
 # ШАГ 1: Запуск Host Unit-тестов и проверка Code Coverage (>= 80%)
 # ==============================================================================
-# Добавлен параметр --gcov-executable gcov-12 для явного указания версии gcov
 RUN cmake -B build_host -DENABLE_COVERAGE=ON && \
     cmake --build build_host && \
     ./build_host/fsm_unit_tests && \
@@ -66,11 +65,12 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 RUN python3 tests/check_size.py
 
 # ==============================================================================
-# ШАГ 3: Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
+# ШАГ 3: Интеграционный прогон: Функциональные + 5-минутный Стресс-тест в Renode
 # ==============================================================================
 RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 5 && \
-    python3 tests/tests_renode.py --url socket://localhost:4321 --timeout 0.5 ; \
+    python3 tests/tests_renode.py --url socket://localhost:4321 --timeout 0.5 && \
+    python3 tests/stress_test.py --url socket://localhost:4321 --duration 300 ; \
     TEST_RESULT=$? ; \
     gdb-multiarch build/UART_DRIVER.elf -batch -x tests/ci_debug.gdb ; \
     kill $PID ; \
