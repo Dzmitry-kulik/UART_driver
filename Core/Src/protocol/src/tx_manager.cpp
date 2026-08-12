@@ -58,5 +58,4 @@ void UartTxManager::start_dma_transmission() {
     }
   }
 }
-
 } // namespace protocol

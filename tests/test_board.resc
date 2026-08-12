@@ -1,7 +1,6 @@
 mach create "stm32f411"
 machine LoadPlatformDescription @platforms/boards/stm32f4_discovery-kit.repl
 
-# Игнорируем некритичные обращения к блокам RCC/System, чтобы HAL не вылетал по timeout
 sysbus.gpioPortA SilenceRange 0x00 0x100
 
 emulation CreateServerSocketTerminal 1234 "uart_socket"
@@ -9,6 +8,6 @@ connector Connect sysbus.usart1 uart_socket
 
 machine StartGdbServer 3333
 
-sysbus LoadELF @build/UART_DRIVER.elf
+sysbus LoadELF @/app/build/UART_DRIVER.elf
 
 start
