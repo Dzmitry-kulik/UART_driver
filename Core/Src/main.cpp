@@ -177,7 +177,9 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
  * @brief  The application entry point.
  * @retval int
  */
-int main(void) {
+iint main(void) {
+  (void)g_read_pos; // Гарантирует сохранение символа g_read_pos для GDB
+
   HAL_Init();
   SystemClock_Config();
 
@@ -186,24 +188,19 @@ int main(void) {
   MX_USART1_UART_Init();
 
   /* USER CODE BEGIN 2 */
-
   HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(USART1_IRQn);
 
 #ifdef CI_RENODE_TEST
-  // Включаем непрерывное прерывание по приёму байта (RXNE)
   __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
 #else
-  // На реальном железе запускаем DMA
   HAL_UART_Receive_DMA(&huart1, (uint8_t *)g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
   __HAL_UART_CLEAR_IDLEFLAG(&huart1);
   __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
 #endif
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   while (1) {
 #ifndef CI_RENODE_TEST
     size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
@@ -219,9 +216,5 @@ int main(void) {
       }
     }
 #endif
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
   }
-  /* USER CODE END 3 */
 }

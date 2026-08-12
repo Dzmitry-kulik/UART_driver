@@ -155,27 +155,32 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
 }
 
 bool FrameParser::validate_crc() {
-  uint16_t calculated_crc = 0xFFFF;
+  // 1. Создаем временный буфер под заголовок (5 байт) + payload
+  std::vector<uint8_t> crc_buffer;
+  crc_buffer.reserve(5 + rx_frame_.payload.size());
 
-  // Формируем байты полного заголовка (version + type + seq_num + payload_len)
-  uint8_t header_bytes[FrameHeader::size()];
-  header_bytes[0] = rx_frame_.version;
-  header_bytes[1] = static_cast<uint8_t>(rx_frame_.type);
-  header_bytes[2] = rx_frame_.seq_num;
+  // 2. Заполняем заголовок в Big-Endian формате (соответствует
+  // struct.pack(">BBBH"))
+  crc_buffer.push_back(rx_frame_.version);
+  crc_buffer.push_back(static_cast<uint8_t>(rx_frame_.type));
+  crc_buffer.push_back(rx_frame_.seq_num);
+  crc_buffer.push_back(
+      static_cast<uint8_t>((rx_frame_.payload_len >> 8) & 0xFF)); // MSB
+  crc_buffer.push_back(
+      static_cast<uint8_t>(rx_frame_.payload_len & 0xFF)); // LSB
 
-#if PAYLOAD_LEN_SIZE == 2
-  header_bytes[3] = static_cast<uint8_t>((rx_frame_.payload_len >> 8) & 0xFF);
-  header_bytes[4] = static_cast<uint8_t>(rx_frame_.payload_len & 0xFF);
-#else
-  header_bytes[3] = static_cast<uint8_t>(rx_frame_.payload_len & 0xFF);
-#endif
-  calculated_crc =
-      Crc16::calculate(header_bytes, sizeof(header_bytes), calculated_crc);
+  // 3. Добавляем полезную нагрузку
   if (!rx_frame_.payload.empty()) {
-    calculated_crc = Crc16::calculate(rx_frame_.payload.data(),
-                                      rx_frame_.payload.size(), calculated_crc);
+    crc_buffer.insert(crc_buffer.end(), rx_frame_.payload.begin(),
+                      rx_frame_.payload.end());
   }
 
+  // 4. Считаем CRC16 в один проход
+  uint16_t calculated_crc =
+      Crc16::calculate(crc_buffer.data(), crc_buffer.size());
+
+  // 5. Сравниваем с принятым rx_crc_ (собранным как (byte_high << 8) |
+  // byte_low)
   return calculated_crc == rx_crc_;
 }
 } // namespace protocol
