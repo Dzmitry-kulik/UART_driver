@@ -92,7 +92,7 @@ def verify_mcu_counters(elf_path: str) -> bool:
     return True
 
 def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
-    print(f"🚀 Запуск стресс-теста на {duration_sec} секунд (Ограничение скорости: 115200 baud)...")
+    print(f"🚀 Запуск стресс-теста на {duration_sec} секунд (Покадровая эмуляция 115200 baud)...")
 
     payload = b"STRESS_TEST_PACKET_64B_PAYLOAD_FOR_STM32_RING_BUFFER_TESTING__"
     seq_num = 0
@@ -103,27 +103,25 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
     start_time = time.time()
     last_report = start_time
 
-    # Отправляем пачками
-    frames_per_batch = 10
+    # Отправка строго по 1 кадру для исключения переполнений от мгновенных сбросов пачек
+    frames_per_batch = 1
 
     # Настройки физического канала
     BAUD_RATE = 115200
     BYTES_PER_SEC = BAUD_RATE / 10.0  # 1 байт = 10 бит (8 данных + старт + стоп)
 
     while time.time() - start_time < duration_sec:
-        batch_data = b""
-        for _ in range(frames_per_batch):
-            frame = build_frame(seq_num, payload)
-            batch_data += frame.replace(b"\xFF", b"\xFF\xFF") # Telnet escape для Renode
-            seq_num = (seq_num + 1) % 256
-            sent_frames += 1
+        frame = build_frame(seq_num, payload)
+        raw_frame = frame.replace(b"\xFF", b"\xFF\xFF") # Telnet escape для Renode
+        seq_num = (seq_num + 1) % 256
+        sent_frames += 1
 
         t_tx_start = time.perf_counter()
 
-        # 1. Отправляем пачку байт
-        ser.write(batch_data)
+        # 1. Отправка 1 кадра
+        ser.write(raw_frame)
 
-        # 2. Читаем ответы
+        # 2. Вычитываем доступные ответы
         if ser.in_waiting > 0:
             rx_buffer += ser.read(ser.in_waiting).replace(b"\xFF\xFF", b"\xFF")
             acks = count_ack_responses(rx_buffer)
@@ -134,11 +132,10 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
                 if last_ack_pos != -1:
                     rx_buffer = rx_buffer[last_ack_pos + 9:]
 
-        # 3. Троттлинг (Эмуляция физического ограничения скорости UART)
-        tx_time_seconds = len(batch_data) / BYTES_PER_SEC
+        # 3. Равномерный троттлинг кадра под физическую скорость линий
+        tx_time_seconds = len(raw_frame) / BYTES_PER_SEC
         elapsed = time.perf_counter() - t_tx_start
 
-        # Ждём ровно столько, сколько бы это заняло на реальном железе при 115200 бод
         if elapsed < tx_time_seconds:
             time.sleep(tx_time_seconds - elapsed)
 
@@ -147,7 +144,7 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> bool:
             print(f"  ⏱️ [{int(current_time - start_time)}/{duration_sec} сек] Отправлено: {sent_frames} | Получено ACK: {received_acks}")
             last_report = current_time
 
-    # Даем 1.5 секунды на обработку последних байт в пайплайне
+    # Даем время на дочитку оставшихся кадров из буфера
     print("⏳ Ожидание завершения обработки последних кадров...")
     time.sleep(1.5)
     if ser.in_waiting > 0:

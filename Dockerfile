@@ -62,7 +62,6 @@ RUN python3 tests/check_size.py
 # ==============================================================================
 # ШАГ 3: Интеграционный прогон: Функционал + Бенчмарк + Стресс-тест
 # ==============================================================================
-# ДОБАВЛЕНО: Вызов tests/benchmark.py и сохранение графика в папку build/
 RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 5 && \
     python3 tests/tests_renode.py --url socket://localhost:4321 --timeout 0.5 && \
