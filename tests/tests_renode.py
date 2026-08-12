@@ -225,29 +225,22 @@ def generate_test_cases():
 
     return test_cases
 
-
-def run_single_test(
-    ser: serial.Serial, test: dict, timeout: float = 0.5
-) -> bool:
-    """Выполняет один тест с адаптивным вычитыванием из сокета."""
+def run_single_test(ser: serial.Serial, test: dict, timeout: float = 0.5) -> bool:
+    """Выполняет один тест и сверяет результат."""
     ser.reset_input_buffer()
-    ser.write(test["data"])
+
+    # === TELNET ESCAPE FIX ===
+    # Экранируем байт 0xFF для Telnet-сервера Renode, заменяя его на 0xFF 0xFF
+    raw_data = test["data"].replace(b'\xFF', b'\xFF\xFF')
+    ser.write(raw_data)
 
     start_time = time.time()
     rx_buffer = b""
 
-    # Напливаем байты из сокета
+    # Накапливаем ответ за отведённый таймаут
     while time.time() - start_time < timeout:
         if ser.in_waiting > 0:
             rx_buffer += ser.read(ser.in_waiting)
-
-            # Для тестов с ожиданием ACK даем завершиться при получении нужного количества байт
-            ack_cnt = count_ack_responses(rx_buffer)
-            if test["expected"] == "SUCCESS" and ack_cnt >= 1:
-                break
-            elif test["expected"] == "SUCCESS_DOUBLE" and ack_cnt >= 2:
-                break
-
         time.sleep(0.01)
 
     ack_count = count_ack_responses(rx_buffer)
@@ -257,7 +250,7 @@ def run_single_test(
         if ack_count >= 1:
             print("    ✅ Passed: ACK получен")
             return True
-        print(f"    ❌ Failed: ACK не получен (таймаут, rx_len={len(rx_buffer)})")
+        print("    ❌ Failed: ACK не получен (таймаут)")
         return False
 
     elif expected == "SUCCESS_DOUBLE":
@@ -269,16 +262,12 @@ def run_single_test(
 
     elif expected == "SILENCE":
         if ack_count == 0:
-            print(
-                "    ✅ Passed: Некорректный пакет проигнорирован (ACK"
-                " отсутствует)"
-            )
+            print("    ✅ Passed: Некорректный пакет проигнорирован (ACK отсутствует)")
             return True
         print("    ❌ Failed: Получен ACK на ошибочный пакет!")
         return False
 
     return False
-
 
 def main():
     parser = argparse.ArgumentParser(
