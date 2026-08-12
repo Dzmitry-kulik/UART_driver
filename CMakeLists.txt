@@ -18,10 +18,10 @@ if(ENABLE_COVERAGE)
     add_link_options(--coverage)
 
     # Исполняемый файл юнит-тестов
+    # Удален crc16.hpp (заголовочные файлы подтягиваются автоматически через include)
     add_executable(fsm_unit_tests
         tests/unit/test_fsm_parser.cpp
         Core/Src/protocol/src/FSM_parser.cpp
-        Core/Src/protocol/src/crc16.cpp
         Core/Src/protocol/src/diagnostics.cpp
         Core/Src/protocol/src/circular_buf.cpp
     )
@@ -68,12 +68,11 @@ else()
         Core/Src/system_stm32f4xx.c
         Core/Startup/startup_stm32f411ceux.s
 
-        # Файлы протокола
+        # Файлы протокола (удален несуществующий crc16.cpp)
         Core/Src/protocol/src/circular_buf.cpp
         Core/Src/protocol/src/diagnostics.cpp
         Core/Src/protocol/src/FSM_parser.cpp
         Core/Src/protocol/src/tx_manager.cpp
-        Core/Src/protocol/src/crc16.cpp
 
         # Все исходники HAL
         ${HAL_SOURCES}
