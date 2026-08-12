@@ -38,5 +38,5 @@ def check_firmware_size(elf_path, max_flash_kb=512):
 
 if __name__ == "__main__":
     # Убрали расширение .elf, теперь скрипт ищет правильный файл
-    elf_file = "build/UART_DRIVER"
+    elf_file = "build/UART_DRIVER.elf"
     check_firmware_size(elf_file)
