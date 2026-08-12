@@ -1,15 +1,13 @@
 mach create "stm32f411"
 machine LoadPlatformDescription @platforms/boards/stm32f4_discovery-kit.repl
 
-# 1. Открываем UART для Python-скрипта
-emulation CreateServerSocketTerminal 1234 "uart_socket"
+# 1. Открываем UART на порту 4321 (1234 занят консолью Renode!)
+emulation CreateServerSocketTerminal 4321 "uart_socket"
 connector Connect sysbus.usart1 uart_socket
 
-# 2. Запускаем GDB-сервер для снятия дампа памяти
+# 2. Запускаем GDB-сервер
 machine StartGdbServer 3333
 
-# 3. Загружаем прошивку по абсолютному пути внутри Docker
+# 3. Загружаем прошивку и стартуем
 sysbus LoadELF @/app/build/UART_DRIVER.elf
-
-# 4. Снимаем процессор с паузы
 start

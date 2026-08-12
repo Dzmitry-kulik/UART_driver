@@ -45,10 +45,9 @@ RUN python3 tests/check_size.py
 
 # 3. Интеграционное тестирование + автоматический дамп переменных через gdb-multiarch
 # 3. Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
-# 3. Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
 RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
-    sleep 3 && \
-    python3 tests/tests_renode.py --timeout 0.5 ; \
+    sleep 5 && \
+    python3 tests/tests_renode.py --url socket://localhost:4321 --timeout 0.5 ; \
     TEST_RESULT=$? ; \
     gdb-multiarch build/UART_DRIVER.elf -batch -x tests/ci_debug.gdb ; \
     kill $PID ; \

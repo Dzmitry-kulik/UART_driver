@@ -224,7 +224,7 @@ def run_single_test(ser: serial.Serial, test: dict, timeout: float = 0.3) -> boo
 
 def main():
     parser = argparse.ArgumentParser(description="Renode Integration Test Runner")
-    parser.add_argument("--url", default="socket://localhost:1234", help="Serial/Socket connection URL")
+    parser.add_argument("--url", default="socket://localhost:4321", help="Serial/Socket connection URL")
     parser.add_argument("--timeout", type=float, default=0.3, help="Timeout for single test response (seconds)")
     parser.add_argument("--retries", type=int, default=10, help="Max connection attempts to Renode socket")
     args = parser.parse_args()
