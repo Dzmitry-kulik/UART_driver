@@ -58,7 +58,7 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-// Хэндл UART1 (физическое выделение памяти)
+// Ссылаемся на хэндл UART1 из peripherals.c
 extern UART_HandleTypeDef huart1;
 
 // Кольцевой буфер приёма DMA и программный индекс чтения
@@ -80,8 +80,6 @@ protocol::UartTxManager g_tx_manager(huart1);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
-// 🚨 ИСПРАВЛЕНИЕ: Функции C объявлены БЕЗ слова static, чтобы избежать
-// конфликтов
 extern "C" {
 void SystemClock_Config(void);
 void MX_GPIO_Init(void);
@@ -117,7 +115,6 @@ void on_frame_parsed(
     const auto &frame = result.value();
     stats.rx_frames_ok++;
 
-    // отправки DMA
     static uint8_t ack_frame[9] = {
         0xAA, 0x55, // Преамбула
         0x01,       // Версия
@@ -139,7 +136,6 @@ void on_frame_parsed(
 
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
 
-    // Бизнес-логика обработки валидного кадра
     switch (frame.type) {
     case protocol::MessageType::DATA:
       break;
@@ -152,7 +148,6 @@ void on_frame_parsed(
       break;
     }
   } else {
-    // Учёт ошибок парсинга протокола
     switch (result.error()) {
     case protocol::ParseError::INVALID_CRC:
       stats.crc_errors++;
@@ -170,7 +165,6 @@ void on_frame_parsed(
 // Инициализация экземпляра FrameParser
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
-// 🚨 ИСПРАВЛЕНИЕ: Обертка extern "C" для корректной работы колбеков HAL
 extern "C" {
 /**
  * @brief Обработчик окончания отправки блока DMA TX.
@@ -195,7 +189,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     if (er & HAL_UART_ERROR_ORE)
       g_stats.hw_overrun_errors++;
 
-    // При любой аппаратной ошибке принудительно перезапускаем DMA RX
+    // Перезапуск приема DMA при ошибках
     HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
   }
 }
@@ -207,26 +201,14 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
  * @retval int
  */
 int main(void) {
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick.
    */
   HAL_Init();
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
   /* Configure the system clock */
   SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
@@ -271,9 +253,5 @@ int main(void) {
         dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
       }
     }
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
   }
-  /* USER CODE END 3 */
 }
