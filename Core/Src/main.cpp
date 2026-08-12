@@ -2,8 +2,7 @@
 /**
  ******************************************************************************
  * @file           : main.cpp
- * @brief          : Main program body (UART DMA Receiver & Transmitter with
- *Diagnostics)
+ * @brief          : Main program body (UART Receiver & Transmitter)
  ******************************************************************************
  * @attention
  *
@@ -24,13 +23,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-// 1. Подключаем HAL для определения типов и макросов периферии
 #include "stm32f4xx_hal.h"
 
-// 2. Отменяем сишный макрос CRC библиотеки HAL, чтобы не ломать enum class
 #undef CRC
 
-// 3. C++ заголовки проекта
 #include "FSM_parser.hpp"
 #include "crc16.hpp"
 #include "diagnostics.hpp"
@@ -58,23 +54,18 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-// Ссылаемся на хэндл UART1 из peripherals.c
 extern UART_HandleTypeDef huart1;
 
-// Кольцевой буфер приёма DMA и программный индекс чтения
+// Буферы приёма
 alignas(4) uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
 size_t g_read_pos = 0;
+uint8_t g_rx_renode_byte =
+    0; // Временный байт для приёма по прерываниям в Renode
 
-// Флаг события прерывания IDLE (выставляется в stm32f4xx_it.c)
 volatile bool g_data_received_event = false;
 
-// 1. Создаем экземпляр структуры статистики, передаваемый в диагностику
 protocol::DiagnosticsStats g_stats{};
-
-// 2. Диагностический сервис статистики (принимает ссылку на stats)
 protocol::DiagnosticsService g_diagnostics(g_stats);
-
-// 3. Менеджер отправки через DMA TX с кольцевой очередью
 protocol::UartTxManager g_tx_manager(huart1);
 
 /* USER CODE END PV */
@@ -96,17 +87,10 @@ void on_frame_parsed(
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/**
- * @brief Возвращает текущее значение счетчика NDTR (сколько байт осталось
- * принять DMA).
- */
 inline uint16_t get_dma_rx_counter(void) {
   return static_cast<uint16_t>(__HAL_DMA_GET_COUNTER(huart1.hdmarx));
 }
 
-/**
- * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
- */
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
   auto &stats = g_stats;
@@ -119,18 +103,15 @@ void on_frame_parsed(
         0xAA, 0x55, // Преамбула
         0x01,       // Версия
         0x02,       // Тип (ACK)
-        0x00,       // seq_num (заполним ниже)
+        0x00,       // seq_num
         0x00, 0x00, // Длина payload = 0
         0x00, 0x00  // Место под CRC
     };
 
-    // Обновляем sequence number под текущий кадр
     ack_frame[4] = frame.seq_num;
 
-    // Считаем CRC16 для заголовка (5 байт)
     uint16_t crc = protocol::Crc16::calculate(&ack_frame[2], 5);
 
-    // Записываем CRC (Big-Endian)
     ack_frame[7] = static_cast<uint8_t>((crc >> 8) & 0xFF);
     ack_frame[8] = static_cast<uint8_t>(crc & 0xFF);
 
@@ -139,11 +120,9 @@ void on_frame_parsed(
     switch (frame.type) {
     case protocol::MessageType::DATA:
       break;
-
     case protocol::MessageType::ACK:
     case protocol::MessageType::NACK:
       break;
-
     default:
       break;
     }
@@ -162,16 +141,27 @@ void on_frame_parsed(
   }
 }
 
-// Инициализация экземпляра FrameParser
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 extern "C" {
 /**
- * @brief Обработчик окончания отправки блока DMA TX.
+ * @brief Обработчик окончания отправки блока UART TX.
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     g_tx_manager.on_tx_complete_isr();
+  }
+}
+
+/**
+ * @brief Обработчик окончания приёма байта UART RX (для режима IT в Renode).
+ */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART1) {
+#ifdef CI_RENODE_TEST
+    g_parser.process_byte(g_rx_renode_byte);
+    HAL_UART_Receive_IT(&huart1, &g_rx_renode_byte, 1);
+#endif
   }
 }
 
@@ -189,8 +179,11 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     if (er & HAL_UART_ERROR_ORE)
       g_stats.hw_overrun_errors++;
 
-    // Перезапуск приема DMA при ошибках
+#ifdef CI_RENODE_TEST
+    HAL_UART_Receive_IT(&huart1, &g_rx_renode_byte, 1);
+#else
     HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
+#endif
   }
 }
 }
@@ -201,45 +194,40 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
  * @retval int
  */
 int main(void) {
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
-   */
   HAL_Init();
-
-  /* Configure the system clock */
   SystemClock_Config();
 
-  /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART1_UART_Init();
 
   /* USER CODE BEGIN 2 */
 
-  // Настройка прерываний UART
   HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(USART1_IRQn);
 
-  // 1. Старт приема DMA в цикличном режиме (CIRCULAR)
+#ifdef CI_RENODE_TEST
+  // Для Renode включаем приём по прерываниям
+  HAL_UART_Receive_IT(&huart1, &g_rx_renode_byte, 1);
+#else
+  // На реальной железяке запускаем аппаратный кольцевой DMA
   HAL_UART_Receive_DMA(&huart1, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
-
-  // Сбрасываем флаг и включаем прерывание по линии простоя (IDLE line)
   __HAL_UART_CLEAR_IDLEFLAG(&huart1);
   __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
+#endif
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-    // Рассчитываем текущую позицию записи DMA в кольцевом буфере
+#ifndef CI_RENODE_TEST
+    // На реальном железе данные вычитываются из кольцевого буфера DMA
     size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
 
     if (g_data_received_event || (g_read_pos != dma_write_pos)) {
       g_data_received_event = false;
 
-      // Побайтовый разбор данных из DMA-буфера через класс FrameParser
       while (g_read_pos != dma_write_pos) {
         uint8_t byte = g_dma_rx_buffer[g_read_pos];
         g_parser.process_byte(byte);
@@ -247,6 +235,7 @@ int main(void) {
         dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
       }
     }
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
