@@ -117,7 +117,6 @@ void on_frame_parsed(
     const auto &frame = result.value();
     stats.rx_frames_ok++;
 
-    // 🚨 ИСПРАВЛЕНИЕ: Используем static, чтобы память не стерлась до конца
     // отправки DMA
     static uint8_t ack_frame[9] = {
         0xAA, 0x55, // Преамбула
