@@ -1,10 +1,8 @@
 #include "FSM_parser.hpp"
 #include "crc16.hpp"
-#ifdef HOST_UNIT_TEST
-extern "C" uint32_t HAL_GetTick(void);
-#else
 #include "stm32f4xx_hal.h"
-#endif
+
+// Отменяем макрос HAL, который ломает ParserState::CRC
 #undef CRC
 
 namespace protocol {
