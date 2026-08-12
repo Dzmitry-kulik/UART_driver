@@ -56,11 +56,9 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 /* USER CODE BEGIN PV */
 extern UART_HandleTypeDef huart1;
 
-// Буферы приёма
 alignas(4) uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
-size_t g_read_pos = 0;
-uint8_t g_rx_renode_byte =
-    0; // Временный байт для приёма по прерываниям в Renode
+volatile size_t g_read_pos =
+    0; // volatile предотвратит удаление символа компилятором
 
 volatile bool g_data_received_event = false;
 
@@ -76,6 +74,7 @@ void SystemClock_Config(void);
 void MX_GPIO_Init(void);
 void MX_DMA_Init(void);
 void MX_USART1_UART_Init(void);
+void renode_process_rx_byte(uint8_t byte);
 }
 
 /* USER CODE BEGIN PFP */
@@ -145,29 +144,16 @@ static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 extern "C" {
 /**
- * @brief Обработчик окончания отправки блока UART TX.
+ * Функция вызова парсера прямо из обработчика прерываний USART1 (для Renode)
  */
+void renode_process_rx_byte(uint8_t byte) { g_parser.process_byte(byte); }
+
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     g_tx_manager.on_tx_complete_isr();
   }
 }
 
-/**
- * @brief Обработчик окончания приёма байта UART RX (для режима IT в Renode).
- */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-  if (huart->Instance == USART1) {
-#ifdef CI_RENODE_TEST
-    g_parser.process_byte(g_rx_renode_byte);
-    HAL_UART_Receive_IT(&huart1, &g_rx_renode_byte, 1);
-#endif
-  }
-}
-
-/**
- * @brief Обработчик аппаратных ошибок периферии UART.
- */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     uint32_t er = huart->ErrorCode;
@@ -179,10 +165,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     if (er & HAL_UART_ERROR_ORE)
       g_stats.hw_overrun_errors++;
 
-#ifdef CI_RENODE_TEST
-    HAL_UART_Receive_IT(&huart1, &g_rx_renode_byte, 1);
-#else
-    HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
+#ifndef CI_RENODE_TEST
+    HAL_UART_Receive_DMA(huart, (uint8_t *)g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
 #endif
   }
 }
@@ -207,11 +191,11 @@ int main(void) {
   HAL_NVIC_EnableIRQ(USART1_IRQn);
 
 #ifdef CI_RENODE_TEST
-  // Для Renode включаем приём по прерываниям
-  HAL_UART_Receive_IT(&huart1, &g_rx_renode_byte, 1);
+  // Включаем непрерывное прерывание по приёму байта (RXNE)
+  __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
 #else
-  // На реальной железяке запускаем аппаратный кольцевой DMA
-  HAL_UART_Receive_DMA(&huart1, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
+  // На реальном железе запускаем DMA
+  HAL_UART_Receive_DMA(&huart1, (uint8_t *)g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
   __HAL_UART_CLEAR_IDLEFLAG(&huart1);
   __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
 #endif
@@ -222,7 +206,6 @@ int main(void) {
   /* USER CODE BEGIN WHILE */
   while (1) {
 #ifndef CI_RENODE_TEST
-    // На реальном железе данные вычитываются из кольцевого буфера DMA
     size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
 
     if (g_data_received_event || (g_read_pos != dma_write_pos)) {
