@@ -17,7 +17,7 @@ set(CPU_OPTIONS
     -mthumb
 )
 
-# ✅ Объявляем таргет С РАСШИРЕНИЕМ .elf
+# Объявляем таргет С РАСШИРЕНИЕМ .elf
 add_executable(UART_DRIVER.elf)
 
 # Автоматически находим все исходные файлы HAL-библиотеки
@@ -27,6 +27,7 @@ file(GLOB HAL_SOURCES "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
 target_sources(UART_DRIVER.elf PRIVATE
     # Основные системные файлы, пользовательские прерывания и стартовый файл
     Core/Src/main.cpp
+    Core/Src/peripherals.c          # Добавлено (исправление под твою структуру)
     Core/Src/stm32f4xx_hal_msp.c
     Core/Src/stm32f4xx_it.c
     Core/Src/syscalls.c
@@ -47,7 +48,7 @@ target_sources(UART_DRIVER.elf PRIVATE
 # Пути к заголовочным файлам
 target_include_directories(UART_DRIVER.elf PRIVATE
     Core/Inc
-    Core/Src/protocol/inc
+    Core/Src/protocol/inc           # Исправлено (теперь соответствует структуре папок)
     Drivers/STM32F4xx_HAL_Driver/Inc
     Drivers/STM32F4xx_HAL_Driver/Inc/Legacy
     Drivers/CMSIS/Device/ST/STM32F4xx/Include
