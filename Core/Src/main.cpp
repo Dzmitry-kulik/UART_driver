@@ -181,6 +181,7 @@ int main(void) {
 
   /* Infinite loop */
   while (1) {
+    // Автосброс зависшего кадра при молчании линии дольше 200 мс
     g_parser.check_timeout(HAL_GetTick(), 200);
 
 #ifndef CI_RENODE_TEST
