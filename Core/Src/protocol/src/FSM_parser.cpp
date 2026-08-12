@@ -1,5 +1,6 @@
 #include "FSM_parser.hpp"
 #include "crc16.hpp"
+#include "stm32f4xx_hal.h"
 
 namespace protocol {
 
@@ -31,10 +32,26 @@ void FrameParser::process_buffer(const uint8_t *buffer, size_t size) {
   }
 }
 
+void FrameParser::check_timeout(uint32_t current_time_ms, uint32_t timeout_ms) {
+  // Если парсер находится в процессе сборки кадра, но новые байты долго не
+  // поступают
+  if (state_ != ParserState::WAIT_SYNC &&
+      (current_time_ms - last_byte_time_ms_ > timeout_ms)) {
+    stats_.timeout_errors++;
+    stats_.resync_events++;
+    reset(); // Сбрасываем FSM в состояние WAIT_SYNC по таймауту обрыва кадра
+  }
+}
+
 std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
+  // Фиксируем системное время прихода последнего байта
+  last_byte_time_ms_ = HAL_GetTick();
+
   switch (state_) {
 
+  // ====================================================================
   // 1. WAIT_SYNC: Поиск преамбулы (0xAA 0x55)
+  // ====================================================================
   case ParserState::WAIT_SYNC: {
     if (byte == PREAMBLE_BYTES[sync_index_]) {
       sync_index_++;
@@ -47,7 +64,9 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
     break;
   }
 
-  // 2. HEADER: Чтение версии, типа, seq_num и длины
+  // ====================================================================
+  // 2. HEADER: Чтение версии, типа, seq_num и 2-байтовой длины payload
+  // ====================================================================
   case ParserState::HEADER: {
     if (bytes_read_ == 0) {
       rx_frame_.version = byte;
@@ -56,9 +75,9 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
     } else if (bytes_read_ == 2) {
       rx_frame_.seq_num = byte;
     } else if (bytes_read_ == 3) {
-      rx_frame_.payload_len = static_cast<uint16_t>(byte << 8);
+      rx_frame_.payload_len = static_cast<uint16_t>(byte << 8); // MSB
     } else if (bytes_read_ == 4) {
-      rx_frame_.payload_len |= byte;
+      rx_frame_.payload_len |= byte; // LSB
     }
 
     bytes_read_++;
@@ -85,7 +104,9 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
     break;
   }
 
+  // ====================================================================
   // 3. PAYLOAD: Чтение данных
+  // ====================================================================
   case ParserState::PAYLOAD: {
     rx_frame_.payload[bytes_read_] = byte;
     bytes_read_++;
@@ -96,17 +117,19 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
     break;
   }
 
-  // 4. CRC: Чтение и проверка CRC16
+  // ====================================================================
+  // 4. CRC: Вычитывание 2-байтовой суммы (Big-Endian) и валидация
+  // ====================================================================
   case ParserState::CRC: {
     if (bytes_read_ == 0) {
-      rx_crc_ = static_cast<uint16_t>(byte << 8);
+      rx_crc_ = static_cast<uint16_t>(byte << 8); // MSB
       bytes_read_++;
     } else if (bytes_read_ == 1) {
-      rx_crc_ |= byte;
+      rx_crc_ |= byte; // LSB
 
       if (validate_crc()) {
         transition_to(ParserState::DISPATCH);
-        return process_byte(0);
+        return process_byte(0); // Запуск DISPATCH
       } else {
         stats_.crc_errors++;
         stats_.resync_events++;
@@ -121,7 +144,9 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
     break;
   }
 
-  // 5. DISPATCH: Передача кадра в приложения
+  // ====================================================================
+  // 5. DISPATCH: Передача кадра в приложение
+  // ====================================================================
   case ParserState::DISPATCH: {
     if (on_frame_cb_) {
       on_frame_cb_(rx_frame_);
