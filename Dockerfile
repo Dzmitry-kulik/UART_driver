@@ -44,10 +44,13 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 RUN python3 tests/check_size.py
 
 # 3. Интеграционное тестирование + автоматический дамп переменных через gdb-multiarch
+# 3. Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
 RUN renode --disable-xwt tests/test_board.resc & \
-    sleep 5 && \
-    (python3 tests/tests_renode.py || true) && \
-    gdb-multiarch -x tests/ci_debug.gdb /app/build/UART_DRIVER
+    PID=$! && \
+    sleep 3 && \
+    python3 tests/tests_renode.py --timeout 0.5 && \
+    gdb-multiarch build/UART_DRIVER.elf -batch -x tests/ci_debug.gdb && \
+    kill $PID
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
