@@ -196,18 +196,18 @@ void SysTick_Handler(void) {
 void USART1_IRQHandler(void) {
   /* USER CODE BEGIN USART1_IRQn 0 */
 #ifdef CI_RENODE_TEST
-  // Если пришел байт, забираем его себе и НЕМЕДЛЕННО выходим.
-  // Это не даст HAL_UART_IRQHandler увидеть флаг RXNE и "украсть" байт.
-  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE)) {
+  // Вычитываем все пришедшие байты RXNE из регистра DR.
+  // Не используем return, чтобы дать HAL обработать события передачи TX
+  // (TC/TXE).
+  while (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE)) {
     uint8_t byte = (uint8_t)(huart1.Instance->DR & 0xFF);
     extern void renode_process_rx_byte(uint8_t byte);
     renode_process_rx_byte(byte);
-    return; // <--- КРИТИЧЕСКИ ВАЖНЫЙ ВОЗВРАТ
   }
 #endif
   /* USER CODE END USART1_IRQn 0 */
 
-  // HAL будет обрабатывать только отправку (TXE, TC) и ошибки (ORE, FE)
+  // HAL штатно обрабатывает прерывания отправки (TXE, TC) и ошибки (ORE, FE)
   HAL_UART_IRQHandler(&huart1);
 
   /* USER CODE BEGIN USART1_IRQn 1 */

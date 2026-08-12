@@ -57,8 +57,7 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 extern UART_HandleTypeDef huart1;
 
 alignas(4) uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
-volatile size_t g_read_pos =
-    0; // volatile предотвратит удаление символа компилятором
+volatile size_t g_read_pos = 0;
 
 volatile bool g_data_received_event = false;
 
@@ -95,14 +94,14 @@ void on_frame_parsed(
   if (result.has_value()) {
     const auto &frame = result.value();
 
-    // Игнорируем чужой протокол (решение для Теста 7)
+    // Фильтрация чужих версий протокола
     if (frame.version != 0x01) {
       return;
     }
 
     g_stats.rx_frames_ok++;
 
-    static uint8_t ack_frame[9] = {
+    uint8_t ack_frame[9] = {
         0xAA, 0x55, // Преамбула
         0x01,       // Версия
         0x02,       // Тип (ACK)
@@ -125,9 +124,6 @@ void on_frame_parsed(
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 extern "C" {
-/**
- * Функция вызова парсера прямо из обработчика прерываний USART1 (для Renode)
- */
 void renode_process_rx_byte(uint8_t byte) { g_parser.process_byte(byte); }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
