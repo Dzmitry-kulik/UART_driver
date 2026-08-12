@@ -43,7 +43,6 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 # 2. Проверка размера прошивки через скрипт из папки tests/
 RUN python3 tests/check_size.py
 
-# 3. Интеграционное тестирование + автоматический дамп переменных через gdb-multiarch
 # 3. Интеграционный прогон: Запуск Renode + Автоматический дамп через gdb-multiarch
 RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 5 && \
@@ -56,5 +55,9 @@ RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
 
-# Копируем проверенный и собранный бинарник наружу
-COPY --from=builder /app/build/UART_DRIVER /
+# ИСПРАВЛЕНИЕ: Копируем бинарник с явным указанием расширения .elf
+COPY --from=builder /app/build/UART_DRIVER.elf /
+
+# Если CMake также генерирует .bin и .hex, раскомментируйте строки ниже:
+# COPY --from=builder /app/build/UART_DRIVER.bin /
+# COPY --from=builder /app/build/UART_DRIVER.hex /
