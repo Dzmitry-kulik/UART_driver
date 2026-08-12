@@ -193,16 +193,21 @@ void SysTick_Handler(void) {
 void USART1_IRQHandler(void) {
   /* USER CODE BEGIN USART1_IRQn 0 */
 #ifdef CI_RENODE_TEST
-  // Если пришли данные по UART, вычитываем байт напрямую из регистра DR
-  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE) &&
-      __HAL_UART_GET_IT_SOURCE(&huart1, UART_IT_RXNE)) {
+  // Вычитываем все доступные байты напрямую, пока регистр не опустеет.
+  // Это не даст HAL_UART_IRQHandler перехватить и потерять байт.
+  while (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE)) {
     uint8_t byte = (uint8_t)(huart1.Instance->DR & 0xFF);
     extern void renode_process_rx_byte(uint8_t byte);
     renode_process_rx_byte(byte);
   }
+
+  // Сбрасываем флаг переполнения (Overrun), если Python спамил слишком быстро
+  __HAL_UART_CLEAR_OREFLAG(&huart1);
 #endif
   /* USER CODE END USART1_IRQn 0 */
+
   HAL_UART_IRQHandler(&huart1);
+
   /* USER CODE BEGIN USART1_IRQn 1 */
 
   /* USER CODE END USART1_IRQn 1 */

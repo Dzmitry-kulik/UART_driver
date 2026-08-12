@@ -92,11 +92,15 @@ inline uint16_t get_dma_rx_counter(void) {
 
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
-  auto &stats = g_stats;
-
   if (result.has_value()) {
     const auto &frame = result.value();
-    stats.rx_frames_ok++;
+
+    // Игнорируем чужой протокол (решение для Теста 7)
+    if (frame.version != 0x01) {
+      return;
+    }
+
+    g_stats.rx_frames_ok++;
 
     static uint8_t ack_frame[9] = {
         0xAA, 0x55, // Преамбула
@@ -115,28 +119,6 @@ void on_frame_parsed(
     ack_frame[8] = static_cast<uint8_t>(crc & 0xFF);
 
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
-
-    switch (frame.type) {
-    case protocol::MessageType::DATA:
-      break;
-    case protocol::MessageType::ACK:
-    case protocol::MessageType::NACK:
-      break;
-    default:
-      break;
-    }
-  } else {
-    switch (result.error()) {
-    case protocol::ParseError::INVALID_CRC:
-      stats.crc_errors++;
-      break;
-    case protocol::ParseError::PAYLOAD_TOO_LARGE:
-      stats.length_errors++;
-      break;
-    default:
-      stats.resync_events++;
-      break;
-    }
   }
 }
 
