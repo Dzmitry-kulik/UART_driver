@@ -40,7 +40,7 @@ void UartTxManager::on_tx_complete_isr() {
 void UartTxManager::start_dma_transmission() {
   size_t chunk_size = 0;
 
-  // Вычитываем данные из кольцевого буфера во временный линейный буфер DMA
+  // Вычитываем данные из кольцевого буфера во временный линейный буфер
   while (chunk_size < DMA_CHUNK_SIZE &&
          tx_queue_.pop(dma_tx_chunk_[chunk_size])) {
     chunk_size++;
@@ -49,13 +49,22 @@ void UartTxManager::start_dma_transmission() {
   if (chunk_size > 0) {
     is_transmitting_ = true;
 
-    // 🚨 ИСПОЛЬЗУЕМ huart1 напрямую + добавляем защиту от блокировки (проверка
-    // HAL_OK)
+#ifdef CI_RENODE_TEST
+    // Эмулятор Renode: используем прерывания (IT), так как он не умеет в DMA TX
+    if (HAL_UART_Transmit_IT(&huart1, dma_tx_chunk_,
+                             static_cast<uint16_t>(chunk_size)) != HAL_OK) {
+      is_transmitting_ =
+          false; // Сбрасываем флаг при сбое железа, спасая FSM от зависания
+    }
+#else
+    // Реальное железо: летим на полной скорости через DMA
     if (HAL_UART_Transmit_DMA(&huart1, dma_tx_chunk_,
                               static_cast<uint16_t>(chunk_size)) != HAL_OK) {
       is_transmitting_ =
           false; // Сбрасываем флаг при сбое железа, спасая FSM от зависания
     }
+#endif
   }
 }
+
 } // namespace protocol

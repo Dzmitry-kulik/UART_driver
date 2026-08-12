@@ -37,7 +37,7 @@ WORKDIR /app
 COPY . .
 
 # 1. Сборка проекта с отладочными символами (-g)
-RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
+RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-DCI_RENODE_TEST" -DCMAKE_C_FLAGS="-DCI_RENODE_TEST" && \
     cmake --build build
 
 # 2. Проверка размера прошивки через скрипт из папки tests/
