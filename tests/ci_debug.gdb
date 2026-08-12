@@ -6,12 +6,8 @@ printf "\n================ [CI DEBUG DUMP] ================\n"
 info registers pc
 bt
 
-printf "g_stats:\n"
+printf "\ng_stats:\n"
 print g_stats
 
-printf "\ng_read_pos:\n"
-print g_read_pos
-
-printf "=================================================\n"
-
+printf "\n=================================================\n"
 quit

@@ -182,7 +182,7 @@ int main(void) {
   /* Infinite loop */
   while (1) {
     // Проверка межбайтового таймаута (50 мс): автосброс незавершенных кадров
-    g_parser.check_timeout(HAL_GetTick(), 50);
+    g_parser.check_timeout(HAL_GetTick(), 200);
 
 #ifndef CI_RENODE_TEST
     size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
