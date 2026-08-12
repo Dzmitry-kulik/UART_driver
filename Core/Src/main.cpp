@@ -2,35 +2,16 @@
 /**
  ******************************************************************************
  * @file           : main.cpp
- * @brief          : Main program body (UART DMA Receiver & Transmitter with
- *Diagnostics)
- ******************************************************************************
- * @attention
- *
- * Copyright (c) 2026 STMicroelectronics.
- * All rights reserved.
- *
- * This software is licensed under terms that can be found in the LICENSE file
- * in the root directory of this software component.
- * If no LICENSE file comes with this software, it is provided AS-IS.
- *
+ * @brief          : Main program body (C++ Entry Point)
  ******************************************************************************
  */
 /* USER CODE END Header */
 
-/* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
-// 1. Подключаем HAL для определения типов и макросов периферии
 #include "stm32f4xx_hal.h"
 
-// 2. Отменяем сишный макрос CRC библиотеки HAL, чтобы не ломать enum class
 #undef CRC
 
-// 3. C++ заголовки проекта
 #include "FSM_parser.hpp"
 #include "crc16.hpp"
 #include "diagnostics.hpp"
@@ -38,73 +19,31 @@
 #include "tx_manager.hpp"
 #include <expected>
 
-/* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-constexpr size_t DMA_RX_BUFFER_SIZE = 1024;
-constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-/* USER CODE BEGIN PV */
-// Хэндл UART1 (физическое выделение памяти)
-UART_HandleTypeDef huart1;
-
-// Кольцевой буфер приёма DMA и программный индекс чтения
-alignas(4) uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
-size_t g_read_pos = 0;
-
-// Флаг события прерывания IDLE (выставляется в stm32f4xx_it.c)
-volatile bool g_data_received_event = false;
-
-// 1. Создаем экземпляр структуры статистики, передаваемый в диагностику
-protocol::DiagnosticsStats g_stats{};
-
-// 2. Диагностический сервис статистики (принимает ссылку на stats)
-protocol::DiagnosticsService g_diagnostics(g_stats);
-
-// 3. Менеджер отправки через DMA TX с кольцевой очередью
-protocol::UartTxManager g_tx_manager(huart1);
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
+// Объявляем функции инициализации, которые сгенерировал CubeMX (они написаны на
+// C)
+extern "C" {
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
+}
 
-/* USER CODE BEGIN PFP */
-inline uint16_t get_dma_rx_counter(void);
-void on_frame_parsed(
-    const std::expected<protocol::Frame, protocol::ParseError> &result);
-/* USER CODE END PFP */
+constexpr size_t DMA_RX_BUFFER_SIZE = 1024;
+constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
+UART_HandleTypeDef huart1;
+alignas(4) uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
+size_t g_read_pos = 0;
+volatile bool g_data_received_event = false;
 
-/**
- * @brief Возвращает текущее значение счетчика NDTR (сколько байт осталось
- * принять DMA).
- */
+protocol::DiagnosticsStats g_stats{};
+protocol::DiagnosticsService g_diagnostics(g_stats);
+protocol::UartTxManager g_tx_manager(huart1);
+
 inline uint16_t get_dma_rx_counter(void) {
   return static_cast<uint16_t>(__HAL_DMA_GET_COUNTER(huart1.hdmarx));
 }
 
-/**
- * @brief Callback, вызываемый FrameParser при разборе кадра или ошибке.
- */
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
   auto &stats = g_stats;
@@ -113,38 +52,16 @@ void on_frame_parsed(
     const auto &frame = result.value();
     stats.rx_frames_ok++;
 
-    // 1. Инициализируем массив фиксированными значениями.
-    static uint8_t ack_frame[9] = {
-        0xAA, 0x55, // Преамбула
-        0x01,       // Версия
-        0x02,       // Тип (ACK)
-        0x00,       // seq_num (ПЕРЕЗАПИСЫВАЕТСЯ НИЖЕ!)
-        0x00, 0x00, // Длина payload = 0
-        0x00, 0x00  // Место под CRC
-    };
+    uint8_t ack_frame[9] = {0xAA, 0x55, 0x01, 0x02, 0x00,
+                            0x00, 0x00, 0x00, 0x00};
 
-    // Принудительно перезаписываем seq_num для КАЖДОГО нового пакета
     ack_frame[4] = frame.seq_num;
-
-    // Считаем CRC (начиная с Версии, 5 байт)
     uint16_t crc = protocol::Crc16::calculate(&ack_frame[2], 5);
 
-    // Записываем CRC в конец пакета
-    ack_frame[7] = (crc >> 8) & 0xFF; // MSB
-    ack_frame[8] = crc & 0xFF;        // LSB
+    ack_frame[7] = (crc >> 8) & 0xFF;
+    ack_frame[8] = crc & 0xFF;
 
-    // Отправляем пакет в DMA
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
-
-    switch (frame.type) {
-    case protocol::MessageType::DATA:
-      break;
-    case protocol::MessageType::ACK:
-    case protocol::MessageType::NACK:
-      break;
-    default:
-      break;
-    }
   } else {
     switch (result.error()) {
     case protocol::ParseError::INVALID_CRC:
@@ -160,13 +77,8 @@ void on_frame_parsed(
   }
 }
 
-// Инициализация экземпляра FrameParser
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
-/**
- * @brief Обработчик окончания отправки блока DMA TX.
- * Вызывается автоматически библиотекой HAL при завершении передачи.
- */
 extern "C" {
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
@@ -174,199 +86,50 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
   }
 }
 
-/**
- * @brief Обработчик аппаратных ошибок периферии UART.
- */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     uint32_t er = huart->ErrorCode;
-    auto &stats = g_stats;
-
     if (er & HAL_UART_ERROR_FE)
-      stats.hw_framing_errors++;
+      g_stats.hw_framing_errors++;
     if (er & HAL_UART_ERROR_PE)
-      stats.hw_parity_errors++;
+      g_stats.hw_parity_errors++;
     if (er & HAL_UART_ERROR_ORE)
-      stats.hw_overrun_errors++;
+      g_stats.hw_overrun_errors++;
 
-    // При аппаратной ошибке HAL отключает прием — перезапускаем DMA RX
     HAL_UART_Receive_DMA(huart, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
   }
 }
 }
 
-/* USER CODE END 0 */
-
-/**
- * @brief  The application entry point.
- * @retval int
- */
 int main(void) {
-
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
-   */
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
+  // Инициализация из CubeMX
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART1_UART_Init();
 
-  /* USER CODE BEGIN 2 */
+  // Настройка прерываний и запуск DMA
+  HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(USART1_IRQn);
 
-  // 1. Старт приема DMA в цикличном режиме (CIRCULAR)
   HAL_UART_Receive_DMA(&huart1, g_dma_rx_buffer, DMA_RX_BUFFER_SIZE);
-
-  // 2. Сбрасываем старый флаг IDLE перед включением прерывания
   __HAL_UART_CLEAR_IDLEFLAG(&huart1);
-
-  // 3. Включаем прерывание по линии простоя (IDLE line)
   __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
 
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   while (1) {
-    // Рассчитываем текущую позицию записи DMA в кольцевом буфере
     size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
 
     if (g_data_received_event || (g_read_pos != dma_write_pos)) {
       g_data_received_event = false;
 
-      // Побайтовый разбор данных из DMA-буфера через класс FrameParser
       while (g_read_pos != dma_write_pos) {
         uint8_t byte = g_dma_rx_buffer[g_read_pos];
-
-        // Основной вызов FSM-парсера
         g_parser.process_byte(byte);
-
-        // Продвигаем программный индекс чтения по битовой маске
         g_read_pos = (g_read_pos + 1) & DMA_RX_BUFFER_MASK;
-
-        // Обновляем текущую позицию DMA на случай прихода новых байт
         dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
       }
     }
-
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
-}
-
-/**
- * @brief System Clock Configuration
- * @retval None
- */
-void SystemClock_Config(void) {
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-  /** Configure the main internal regulator output voltage
-   */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-
-  /** Initializes the RCC Oscillators according to the specified parameters
-   * in the RCC_OscInitTypeDef structure.
-   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-    // Игнорируем ошибки тактирования в симуляторе Renode, чтобы не уходить в
-    // dead-lock
-  }
-
-  /** Initializes the CPU, AHB and APB buses clocks
-   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
-                                RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK) {
-    // Игнорируем ошибки тактирования в симуляторе Renode, чтобы не уходить в
-    // dead-lock
   }
 }
-
-/* USER CODE BEGIN 4 */
-
-/**
- * @brief USART1 Initialization Function
- */
-static void MX_USART1_UART_Init(void) {
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK) {
-    Error_Handler();
-  }
-}
-
-/**
- * Enable DMA controller clock
- */
-static void MX_DMA_Init(void) {
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA2_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA2_Stream2_IRQn interrupt configuration (USART1_RX) */
-  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
-}
-
-/**
- * @brief GPIO Initialization Function
- */
-static void MX_GPIO_Init(void) { __HAL_RCC_GPIOA_CLK_ENABLE(); }
-
-/* USER CODE END 4 */
-
-/**
- * @brief  This function is executed in case of error occurrence.
- * @retval None
- */
-void Error_Handler(void) {
-  /* USER CODE BEGIN Error_Handler_Debug */
-  __disable_irq();
-  while (1) {
-  }
-  /* USER CODE END Error_Handler_Debug */
-}
-
-#ifdef USE_FULL_ASSERT
-void assert_failed(uint8_t *file, uint32_t line) {
-  /* USER CODE BEGIN 6 */
-  /* USER CODE END 6 */
-}
-#endif /* USE_FULL_ASSERT */
