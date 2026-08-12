@@ -1,6 +1,8 @@
 #include "FSM_parser.hpp"
 #include "crc16.hpp"
 #include "stm32f4xx_hal.h"
+
+// Отменяем макрос HAL, который ломает ParserState::CRC
 #undef CRC
 
 namespace protocol {
@@ -38,12 +40,11 @@ void FrameParser::check_timeout(uint32_t current_time_ms, uint32_t timeout_ms) {
       (current_time_ms - last_byte_time_ms_ > timeout_ms)) {
     stats_.timeout_errors++;
     stats_.resync_events++;
-    reset(); // Сбрасываем FSM в состояние WAIT_SYNC по таймауту обрыва кадра
+    reset();
   }
 }
 
 std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
-  // Фиксируем системное время прихода последнего байта
   last_byte_time_ms_ = HAL_GetTick();
 
   switch (state_) {
@@ -64,7 +65,7 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
   }
 
   // ====================================================================
-  // 2. HEADER: Чтение версии, типа, seq_num и 2-байтовой длины payload
+  // 2. HEADER: Чтение версии, типа, seq_num и длины payload
   // ====================================================================
   case ParserState::HEADER: {
     if (bytes_read_ == 0) {
@@ -117,7 +118,7 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
   }
 
   // ====================================================================
-  // 4. CRC: Вычитывание 2-байтовой суммы (Big-Endian) и валидация
+  // 4. CRC: Вычитывание 2-байтовой суммы и валидация
   // ====================================================================
   case ParserState::CRC: {
     if (bytes_read_ == 0) {
@@ -127,8 +128,12 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
       rx_crc_ |= byte; // LSB
 
       if (validate_crc()) {
-        transition_to(ParserState::DISPATCH);
-        return process_byte(0); // Запуск DISPATCH
+        Frame completed_frame = std::move(rx_frame_);
+        reset(); // <--- ВАЖНО: сбрасываем состояние ДО вызова колбека!
+
+        if (on_frame_cb_) {
+          on_frame_cb_(completed_frame);
+        }
       } else {
         stats_.crc_errors++;
         stats_.resync_events++;
@@ -143,13 +148,8 @@ std::expected<void, ParseError> FrameParser::process_byte(uint8_t byte) {
     break;
   }
 
-  // ====================================================================
-  // 5. DISPATCH: Передача кадра в приложение
-  // ====================================================================
+  // Резервный шаг для интерфейса (не используется напрямую)
   case ParserState::DISPATCH: {
-    if (on_frame_cb_) {
-      on_frame_cb_(rx_frame_);
-    }
     reset();
     break;
   }
