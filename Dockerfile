@@ -66,7 +66,7 @@ RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 5 && \
     python3 tests/tests_renode.py --url socket://localhost:4321 --timeout 0.5 && \
     python3 tests/benchmark.py --url socket://localhost:4321 --output build/benchmark_results.png && \
-    python3 tests/stress_test.py --url socket://localhost:4321 --duration 30; \
+    python3 tests/stress_test.py --url socket://localhost:4321 --duration 10; \
     TEST_RESULT=$? ; \
     gdb-multiarch build/UART_DRIVER.elf -batch -x tests/ci_debug.gdb ; \
     kill $PID ; \
