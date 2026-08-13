@@ -47,8 +47,6 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 /* USER CODE BEGIN PV */
 extern UART_HandleTypeDef huart1;
 
-// ✅ ИСПРАВЛЕНО: Добавлен volatile для предотвращения агрессивного кэширования
-// буфера DMA в регистрах CPU
 alignas(4) volatile uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
 volatile size_t g_read_pos = 0;
 
@@ -82,6 +80,10 @@ void on_frame_parsed(
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+// === ИСПРАВЛЕНИЕ ЗДЕСЬ ===
+// Объявляем парсер ДО того, как его вызовет process_dma_rx_bytes
+static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 static const char LOREM_IPSUM[] =
     R"(orem ipsum dolor sit amet, consectetur adipiscing elit. Sed molestie
@@ -259,7 +261,6 @@ void on_frame_parsed(
     }
   }
 }
-static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 extern "C" {
 void renode_process_rx_byte(uint8_t byte) { g_parser.process_byte(byte); }

@@ -81,7 +81,5 @@ RUN cmake -B build_prod -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYP
 
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
-
-# Теперь мы отдаем наружу прошивку, собранную специально для реального МК!
 COPY --from=builder /app/build_prod/UART_DRIVER.elf /
 COPY --from=builder /app/build/benchmark_results.png /
