@@ -34,17 +34,27 @@ bool UartTxManager::send_bytes(const uint8_t *data, size_t len) {
     return true;
   }
 
+  // 1. Помещаем байты в очередь
   for (size_t i = 0; i < len; ++i) {
     if (!tx_queue_.push(data[i])) {
       return false;
     }
   }
 
+  // 2. Безопасно проверяем и взводим флаг передачи
+  bool start_tx = false;
   __disable_irq();
   if (!is_transmitting_) {
-    start_dma_transmission();
+    is_transmitting_ = true;
+    start_tx = true;
   }
   __enable_irq();
+
+  // 3. Запускаем физическую передачу ВНЕ критической секции,
+  // чтобы не блокировать системный таймер (SysTick)
+  if (start_tx) {
+    start_dma_transmission();
+  }
 
   return true;
 }
@@ -137,6 +147,7 @@ void UartTxManager::on_tx_complete_isr() {
   is_transmitting_ = false;
 
   if (!tx_queue_.empty()) {
+    is_transmitting_ = true;
     start_dma_transmission();
   }
 }
@@ -150,8 +161,6 @@ void UartTxManager::start_dma_transmission() {
   }
 
   if (chunk_size > 0) {
-    is_transmitting_ = true;
-
 #ifdef CI_RENODE_TEST
     // ЭМУЛЯТОР: Полностью обходим HAL и пишем напрямую в регистр данных (DR).
     // Это гарантирует, что статус BUSY_TX не заблокирует передачу пакета.
@@ -164,11 +173,12 @@ void UartTxManager::start_dma_transmission() {
       huart_.Instance->DR = (dma_tx_chunk_[i] & 0xFF);
     }
 
-    // Мгновенно снимаем флаг передачи
+    // Мгновенно снимаем флаг передачи для текущего блока
     is_transmitting_ = false;
 
     // Рекурсивно выталкиваем остатки, если очередь не пуста
     if (!tx_queue_.empty()) {
+      is_transmitting_ = true;
       start_dma_transmission();
     }
 #else
@@ -178,6 +188,8 @@ void UartTxManager::start_dma_transmission() {
       is_transmitting_ = false;
     }
 #endif
+  } else {
+    is_transmitting_ = false;
   }
 }
 

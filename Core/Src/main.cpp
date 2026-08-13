@@ -22,7 +22,6 @@
 #include "diagnostics.hpp"
 #include "frame.hpp"
 #include "tx_manager.hpp"
-#include <cstring> // Для std::memcpy
 #include <expected>
 
 /* USER CODE END Includes */
@@ -166,6 +165,7 @@ void send_lorem_ipsum_stream(protocol::UartTxManager &tx_mgr) {
   while (offset < total_len) {
     size_t bytes_to_send =
         (total_len - offset > CHUNK_SIZE) ? CHUNK_SIZE : (total_len - offset);
+
     const uint8_t *chunk_ptr =
         reinterpret_cast<const uint8_t *>(LOREM_IPSUM + offset);
 
@@ -176,8 +176,8 @@ void send_lorem_ipsum_stream(protocol::UartTxManager &tx_mgr) {
       g_ack_received = false;
       g_waiting_seq_num = seq_num;
 
-      while (!tx_mgr.send_frame(MSG_TYPE_DATA, seq_num, chunk_ptr,
-                                bytes_to_send)) {
+      while (!tx_mgr.send_frame_with_ack(MSG_TYPE_DATA, seq_num, chunk_ptr,
+                                         bytes_to_send, 150, 3)) {
         process_dma_rx_bytes();
       }
 
@@ -239,46 +239,23 @@ void on_frame_parsed(
   g_stats.rx_frames_ok++;
 
   if (frame.type == protocol::MessageType::DATA) {
-    uint8_t ack_frame[9] = {
-        0xAA,          0x55,
-        0x01,          static_cast<uint8_t>(protocol::MessageType::ACK),
-        frame.seq_num, 0x00,
-        0x00,          0x00,
-        0x00};
-
-    uint16_t crc = protocol::Crc16::calculate(&ack_frame[2], 5);
-    ack_frame[7] = static_cast<uint8_t>((crc >> 8) & 0xFF);
-    ack_frame[8] = static_cast<uint8_t>(crc & 0xFF);
-
-    if (g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame))) {
+    // Используем штатный send_frame (Payload = nullptr, Len = 0)
+    if (g_tx_manager.send_frame(
+            static_cast<uint8_t>(protocol::MessageType::ACK), frame.seq_num,
+            nullptr, 0)) {
       g_stats.tx_frames_ok++;
     }
-
   } else if (frame.type == protocol::MessageType::ACK) {
+    // Пришел ACK
     if (frame.seq_num == g_waiting_seq_num) {
       g_ack_received = true;
     }
-
   } else if (frame.type == protocol::MessageType::GET_STATS) {
-    constexpr size_t stats_len = sizeof(protocol::DiagnosticsStats);
-    constexpr size_t frame_len = 9 + stats_len;
-
-    uint8_t resp_frame[frame_len] = {0};
-    resp_frame[0] = 0xAA;
-    resp_frame[1] = 0x55;
-    resp_frame[2] = 0x01;
-    resp_frame[3] = static_cast<uint8_t>(protocol::MessageType::STATS_RESP);
-    resp_frame[4] = frame.seq_num;
-    resp_frame[5] = static_cast<uint8_t>((stats_len >> 8) & 0xFF);
-    resp_frame[6] = static_cast<uint8_t>(stats_len & 0xFF);
-
-    std::memcpy(&resp_frame[7], &g_stats, stats_len);
-
-    uint16_t crc = protocol::Crc16::calculate(&resp_frame[2], 5 + stats_len);
-    resp_frame[frame_len - 2] = static_cast<uint8_t>((crc >> 8) & 0xFF);
-    resp_frame[frame_len - 1] = static_cast<uint8_t>(crc & 0xFF);
-
-    if (g_tx_manager.send_bytes(resp_frame, frame_len)) {
+    // Используем штатный send_frame, отдаем структуру g_stats как Payload
+    if (g_tx_manager.send_frame(
+            static_cast<uint8_t>(protocol::MessageType::STATS_RESP),
+            frame.seq_num, reinterpret_cast<const uint8_t *>(&g_stats),
+            sizeof(g_stats))) {
       g_stats.tx_frames_ok++;
     }
   }
@@ -297,6 +274,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     uint32_t er = huart->ErrorCode;
+
     if (er & HAL_UART_ERROR_FE)
       g_stats.hw_framing_errors++;
     if (er & HAL_UART_ERROR_PE)
