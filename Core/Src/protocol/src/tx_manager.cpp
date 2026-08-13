@@ -155,13 +155,19 @@ void UartTxManager::start_dma_transmission() {
 
   if (chunk_size > 0) {
 #ifdef CI_RENODE_TEST
-    // ЭМУЛЯТОР: Блокирующая отправка через стандартный HAL (абсолютно безопасно
-    // из главного цикла)
-    HAL_UART_Transmit(&huart_, dma_tx_chunk_, static_cast<uint16_t>(chunk_size),
-                      100);
+    // ЭМУЛЯТОР: Прямая запись в регистр (Bare-Metal).
+    // Это обходит баг HAL_UART_Transmit, который возвращает HAL_BUSY
+    // при частых вызовах в эмуляторе и навсегда уничтожает пакет.
+    for (size_t i = 0; i < chunk_size; ++i) {
+      while (__HAL_UART_GET_FLAG(&huart_, UART_FLAG_TXE) == RESET) {
+        // Ждем готовности аппаратного буфера
+      }
+      huart_.Instance->DR = (dma_tx_chunk_[i] & 0xFF);
+    }
+
     is_transmitting_ = false;
 #else
-    // ЖЕЛЕЗО: Быстрая отправка через DMA
+    // ЖЕЛЕЗО: Оставляем быструю асинхронную отправку через DMA
     if (HAL_UART_Transmit_DMA(&huart_, dma_tx_chunk_,
                               static_cast<uint16_t>(chunk_size)) != HAL_OK) {
       is_transmitting_ = false;
