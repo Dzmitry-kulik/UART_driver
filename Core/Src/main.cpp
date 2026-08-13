@@ -297,10 +297,14 @@ int main(void) {
 
   /* Infinite loop */
   while (1) {
-    // === ДОБАВЛЕНО: Проверка нажатия кнопки ===
+#ifndef CI_RENODE_TEST
+    // === ДОБАВЛЕНО: Проверка нажатия кнопки ТОЛЬКО на реальном железе ===
+    // Игнорируем в эмуляторе Renode, чтобы неподключенный пин не вызвал ложных
+    // срабатываний
     if (is_button_pressed_debounced()) {
       send_lorem_ipsum_stream(g_tx_manager);
     }
+#endif
 
     // Автосброс зависшего кадра при молчании линии дольше 200 мс
     g_parser.check_timeout(HAL_GetTick(), 200);
