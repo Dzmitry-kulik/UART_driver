@@ -80,8 +80,16 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> int:
             print(f"  ⏱️ [{int(current_time - start_time)}/{duration_sec} сек] Отправлено кадров с ПК: {sent_frames}")
             last_report = current_time
 
-    print("⏳ Завершение потока и выдержка паузы для обработки последних байт...")
-    time.sleep(1.5)
+    # Принудительно проталкиваем остатки байт из сетевого буфера
+    try:
+        ser.flush()
+    except Exception:
+        pass
+
+    # Выдерживаем увеличенную паузу для гарантированной вычитки буфера микроконтроллером
+    print("⏳ Завершение потока и выдержка паузы (3.5 сек) для обработки последних байт...")
+    time.sleep(3.5)
+
     if ser.in_waiting > 0:
         ser.read(ser.in_waiting)
 
