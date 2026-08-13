@@ -43,7 +43,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-// Ссылаемся на дескрипторы DMA, созданные в peripherals.c
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
 /* USER CODE END PV */
@@ -92,22 +91,34 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     /* USER CODE BEGIN USART1_MspInit 0 */
 
     /* USER CODE END USART1_MspInit 0 */
-    /* Peripheral clock enable */
+
+    /* 1. Включаем тактирование периферии: USART1, GPIOA и DMA2 */
     __HAL_RCC_USART1_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_DMA2_CLK_ENABLE(); // ✅ КРИТИЧЕСКИ ВАЖНО: без этого вылетал
+                                 // HardFault!
 
     /**USART1 GPIO Configuration
     PA9     ------> USART1_TX
-    PA10     ------> USART1_RX
+    PA10    ------> USART1_RX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
+    // Настройка TX (PA9)
+    GPIO_InitStruct.Pin = GPIO_PIN_9;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    /* USART1_TX Init */
+    // Настройка RX (PA10) с подтяжкой к питанию для защиты от шумов
+    GPIO_InitStruct.Pin = GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP; // ✅ Подтяжка к 3.3V в состоянии покоя
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* USART1_TX Init (DMA2 Stream 7) */
     hdma_usart1_tx.Instance = DMA2_Stream7;
     hdma_usart1_tx.Init.Channel = DMA_CHANNEL_4;
     hdma_usart1_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
@@ -123,7 +134,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     }
     __HAL_LINKDMA(huart, hdmatx, hdma_usart1_tx);
 
-    /* USART1_RX Init */
+    /* USART1_RX Init (DMA2 Stream 2) */
     hdma_usart1_rx.Instance = DMA2_Stream2;
     hdma_usart1_rx.Init.Channel = DMA_CHANNEL_4;
     hdma_usart1_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
@@ -138,6 +149,15 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
       Error_Handler();
     }
     __HAL_LINKDMA(huart, hdmarx, hdma_usart1_rx);
+
+    /* ✅ КРИТИЧЕСКИ ВАЖНО: Разрешаем прерывания DMA в контроллере NVIC */
+    /* DMA2_Stream2_IRQn (RX) */
+    HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+
+    /* DMA2_Stream7_IRQn (TX) */
+    HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
 
     /* USER CODE BEGIN USART1_MspInit 1 */
 
@@ -161,9 +181,13 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *huart) {
 
     /**USART1 GPIO Configuration
     PA9     ------> USART1_TX
-    PA10     ------> USART1_RX
+    PA10    ------> USART1_RX
     */
     HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9 | GPIO_PIN_10);
+
+    /* Disable DMA IRQs */
+    HAL_NVIC_DisableIRQ(DMA2_Stream2_IRQn);
+    HAL_NVIC_DisableIRQ(DMA2_Stream7_IRQn);
 
     /* USART1 DMA DeInit */
     HAL_DMA_DeInit(huart->hdmatx);

@@ -81,8 +81,8 @@ void on_frame_parsed(
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// === ИСПРАВЛЕНИЕ ЗДЕСЬ ===
-// Объявляем парсер ДО того, как его вызовет process_dma_rx_bytes
+// Объявляем парсер ДО функций вычитки (использует прототип on_frame_parsed из
+// PFP)
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
 
 static const char LOREM_IPSUM[] =
@@ -138,7 +138,11 @@ vehicula lectus, id volutpat mi. In imperdiet arcu suscipit maximus
 pretium. Cras sed auctor diam. Maecenas ultricies in ligula vitae
 faucibus)";
 
+// === ИСПРАВЛЕНИЕ: Защита от разменования NULL-указателя ===
 inline uint16_t get_dma_rx_counter(void) {
+  if (huart1.hdmarx == nullptr || huart1.hdmarx->Instance == nullptr) {
+    return DMA_RX_BUFFER_SIZE;
+  }
   return static_cast<uint16_t>(__HAL_DMA_GET_COUNTER(huart1.hdmarx));
 }
 

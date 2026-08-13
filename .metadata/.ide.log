@@ -1,5 +1,14 @@
-2026-08-07 15:30:27,197 [INFO] Activator:176 - 
+2026-08-13 17:52:50,329 [INFO] Activator:176 -
 
 
-2026-08-07 15:30:27,199 [INFO] Activator:177 - !SESSION log4j initialized
-2026-08-07 15:30:29,084 [INFO] LogOutputStream:77 - [STDOUT_REDIRECT] 
+2026-08-13 17:52:50,333 [INFO] Activator:177 - !SESSION log4j initialized
+2026-08-13 17:52:53,450 [INFO] LogOutputStream:77 - [STDOUT_REDIRECT]
+2026-08-13 17:52:56,110 [ERROR] ConfigurationRetriever:142 - IOException on connection: Read timed out
+2026-08-13 18:05:18,725 [ERROR] ConfigurationRetriever:142 - IOException on connection: Read timed out
+2026-08-13 18:21:13,294 [ERROR] ConfigurationRetriever:142 - IOException on connection: Read timed out
+2026-08-13 18:24:42,513 [ERROR] AdobePublisher:162 - Exception while opening the connection: java.net.SocketTimeoutException: Read timed out
+2026-08-13 18:24:42,514 [ERROR] AdobePublisher:162 - Exception while opening the connection: java.net.SocketTimeoutException: Read timed out
+2026-08-13 18:24:42,514 [ERROR] AdobePublisher:162 - Exception while opening the connection: java.net.SocketTimeoutException: Read timed out
+2026-08-13 18:24:42,514 [ERROR] AdobePublisher:162 - Exception while opening the connection: java.net.SocketTimeoutException: Read timed out
+2026-08-13 18:24:42,515 [ERROR] AdobePublisher:162 - Exception while opening the connection: java.net.SocketTimeoutException: Read timed out
+2026-08-13 18:27:48,409 [ERROR] ConfigurationRetriever:142 - IOException on connection: Read timed out
