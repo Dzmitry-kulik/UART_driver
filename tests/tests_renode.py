@@ -159,11 +159,13 @@ def generate_test_cases():
         "expected_type": MsgType.ACK
     })
 
+    # === ИЗМЕНЁННЫЙ ТЕСТ №12 ===
+    # Передаем два пакета списком, чтобы скрипт отправил их с микропаузой
     frame1 = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=10, payload=b"First")
     frame2 = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=11, payload=b"Second")
     test_cases.append({
-        "name": "12. Concatenated back-to-back frames",
-        "data": frame1 + frame2,
+        "name": "12. Rapid fire frames (10ms delay between)",
+        "data": [frame1, frame2],
         "expected": "SUCCESS_DOUBLE",
         "expected_type": MsgType.STATS_RESP
     })
@@ -173,8 +175,14 @@ def generate_test_cases():
 def run_single_test(ser: serial.Serial, test: dict, timeout: float = 2.0) -> bool:
     ser.reset_input_buffer()
 
-    raw_data = test["data"].replace(b'\xFF', b'\xFF\xFF')
-    ser.write(raw_data)
+    # Поддержка передачи списка фреймов (для теста 12)
+    test_data = test["data"]
+    if isinstance(test_data, list):
+        for chunk in test_data:
+            ser.write(chunk.replace(b'\xFF', b'\xFF\xFF'))
+            time.sleep(0.01) # Микропауза 10мс между пакетами
+    else:
+        ser.write(test_data.replace(b'\xFF', b'\xFF\xFF'))
 
     start_time = time.time()
     rx_buffer = b""
@@ -182,10 +190,8 @@ def run_single_test(ser: serial.Serial, test: dict, timeout: float = 2.0) -> boo
     expected_type = test["expected_type"]
     expected = test["expected"]
 
-    # Определяем сколько пакетов мы ждем
     target_count = 2 if expected == "SUCCESS_DOUBLE" else (1 if expected == "SUCCESS" else 0)
 
-    # Крутимся до 2 секунд, но если пакеты прилетели раньше - мгновенно выходим!
     while time.time() - start_time < timeout:
         if ser.in_waiting > 0:
             rx_buffer += ser.read(ser.in_waiting)
@@ -223,7 +229,6 @@ def run_single_test(ser: serial.Serial, test: dict, timeout: float = 2.0) -> boo
 def main():
     parser = argparse.ArgumentParser(description="Renode Integration Test Runner")
     parser.add_argument("--url", default="socket://localhost:4321")
-    # Базовый таймаут увеличен до 2.0 секунд для страховки эмулятора
     parser.add_argument("--timeout", type=float, default=2.0)
     parser.add_argument("--retries", type=int, default=10)
     args = parser.parse_args()

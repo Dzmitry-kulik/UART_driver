@@ -47,7 +47,9 @@ constexpr size_t DMA_RX_BUFFER_MASK = DMA_RX_BUFFER_SIZE - 1;
 /* USER CODE BEGIN PV */
 extern UART_HandleTypeDef huart1;
 
-alignas(4) uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
+// ✅ ИСПРАВЛЕНО: Добавлен volatile для предотвращения агрессивного кэширования
+// буфера DMA в регистрах CPU
+alignas(4) volatile uint8_t g_dma_rx_buffer[DMA_RX_BUFFER_SIZE];
 volatile size_t g_read_pos = 0;
 
 volatile bool g_data_received_event = false;
@@ -239,19 +241,16 @@ void on_frame_parsed(
   g_stats.rx_frames_ok++;
 
   if (frame.type == protocol::MessageType::DATA) {
-    // Используем штатный send_frame (Payload = nullptr, Len = 0)
     if (g_tx_manager.send_frame(
             static_cast<uint8_t>(protocol::MessageType::ACK), frame.seq_num,
             nullptr, 0)) {
       g_stats.tx_frames_ok++;
     }
   } else if (frame.type == protocol::MessageType::ACK) {
-    // Пришел ACK
     if (frame.seq_num == g_waiting_seq_num) {
       g_ack_received = true;
     }
   } else if (frame.type == protocol::MessageType::GET_STATS) {
-    // Используем штатный send_frame, отдаем структуру g_stats как Payload
     if (g_tx_manager.send_frame(
             static_cast<uint8_t>(protocol::MessageType::STATS_RESP),
             frame.seq_num, reinterpret_cast<const uint8_t *>(&g_stats),

@@ -190,13 +190,18 @@ void SysTick_Handler(void) {
 /**
  * @brief This function handles USART1 global interrupt.
  */
-/**
- * @brief This function handles USART1 global interrupt.
- */
 void USART1_IRQHandler(void) {
   /* USER CODE BEGIN USART1_IRQn 0 */
-#ifdef CI_RENODE_TEST
-  // В режиме симуляции вычитываем все входящие байты в FSM
+#ifndef CI_RENODE_TEST
+  // На реальном железе: сбрасываем IDLE флаг вручную, чтобы избежать
+  // бесконечного цикла (Hard Lockup)
+  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE)) {
+    __HAL_UART_CLEAR_IDLEFLAG(&huart1);
+    g_data_received_event =
+        true; // Уведомляем main loop о необходимости обработки данных из DMA
+  }
+#else
+  // В режиме симуляции Renode вычитываем все входящие байты в FSM
   while (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE)) {
     uint8_t byte = (uint8_t)(huart1.Instance->DR & 0xFF);
     extern void renode_process_rx_byte(uint8_t byte);
