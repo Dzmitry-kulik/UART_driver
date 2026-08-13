@@ -44,7 +44,7 @@ def read_mcu_stats(elf_path: str) -> dict:
         return {}
 
 def run_stress_test(ser: serial.Serial, duration_sec: int) -> int:
-    print(f"🚀 Запуск 5-минутного стресс-теста ({duration_sec} сек) на скорости 115200 baud...")
+    print(f"🚀 Запуск стресс-теста ({duration_sec} сек) на скорости ~115200 baud...")
 
     payload = b"STRESS_TEST_PACKET_64B_PAYLOAD_FOR_STM32_RING_BUFFER_TESTING__"
     seq_num = 0
@@ -65,9 +65,13 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> int:
         t_tx_start = time.perf_counter()
         ser.write(raw_frame)
 
-        # Вычитываем входной сокет, чтобы он не забивался
-        if ser.in_waiting > 0:
-            ser.read(ser.in_waiting)
+        # === ИСПРАВЛЕНИЕ ЗДЕСЬ ===
+        # Заворачиваем чтение в try-except для защиты от сбоев сокета при высокой нагрузке
+        try:
+            if ser.in_waiting > 0:
+                ser.read(ser.in_waiting)
+        except OSError:
+            pass
 
         # Дросселирование под 115200 baud
         tx_time_seconds = len(raw_frame) / BYTES_PER_SEC
@@ -90,8 +94,12 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> int:
     print("⏳ Завершение потока и выдержка паузы (3.5 сек) для обработки последних байт...")
     time.sleep(3.5)
 
-    if ser.in_waiting > 0:
-        ser.read(ser.in_waiting)
+    # === ИСПРАВЛЕНИЕ ЗДЕСЬ ===
+    try:
+        if ser.in_waiting > 0:
+            ser.read(ser.in_waiting)
+    except OSError:
+        pass
 
     return sent_frames
 
@@ -106,7 +114,7 @@ def main():
     initial_stats = read_mcu_stats(args.elf)
     initial_rx_ok = initial_stats.get("rx_frames_ok", 0)
 
-    # 2. Прогон 5-минутного непрерывного потока
+    # 2. Прогон непрерывного потока
     try:
         ser = serial.serial_for_url(args.url, timeout=0.1)
     except serial.SerialException as e:
@@ -151,7 +159,7 @@ def main():
     if failed:
         sys.exit(1)
 
-    print("🎉 ТЕСТ УСПЕШНО ПРОЙДЕН: 0% потерь и 0 переполнений на стороне MCU за 5 минут!")
+    print("🎉 ТЕСТ УСПЕШНО ПРОЙДЕН: 0% потерь и 0 переполнений на стороне MCU!")
     sys.exit(0)
 
 if __name__ == "__main__":

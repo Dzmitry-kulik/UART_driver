@@ -4,21 +4,19 @@ import struct
 import sys
 import time
 
-# Константы протокола (соответствуют C++)
+# Константы протокола
 PREAMBLE = b"\xAA\x55"
 CURRENT_VERSION = 0x01
 MAX_ALLOWED_PAYLOAD_SIZE = 512
-
 
 class MsgType:
     DATA = 0x01
     ACK = 0x02
     NACK = 0x03
     COMMAND = 0x10
-
+    STATS_RESP = 0x11  # Добавлен тип ответа со статистикой!
 
 def calculate_crc16(data: bytes) -> int:
-    """Точный аналог C++ CRC16 (XMODEM / CCITT-FALSE)."""
     crc = 0xFFFF
     for byte in data:
         crc ^= byte << 8
@@ -29,54 +27,49 @@ def calculate_crc16(data: bytes) -> int:
                 crc = (crc << 1) & 0xFFFF
     return crc
 
-
-def build_frame(
-    version: int,
-    msg_type: int,
-    seq_num: int,
-    payload: bytes,
-    corrupt_crc: bool = False,
-) -> bytes:
-    """Сборка кадра протокола (Header Big-Endian: >BBBH)."""
+def build_frame(version: int, msg_type: int, seq_num: int, payload: bytes, corrupt_crc: bool = False) -> bytes:
     payload_len = len(payload)
     header = struct.pack(">BBBH", version, msg_type, seq_num, payload_len)
     crc_data = header + payload
     crc = calculate_crc16(crc_data)
 
     if corrupt_crc:
-        crc ^= 0xFFFF  # Портим CRC
+        crc ^= 0xFFFF
 
     return PREAMBLE + header + payload + struct.pack(">H", crc)
 
-
-def count_ack_responses(data: bytes) -> int:
-    """Подсчитывает количество правильных ACK кадров в ответе."""
+def count_responses(data: bytes, expected_type: int) -> int:
+    """Умный парсер: снимает Telnet-экранирование и читает длину из заголовка."""
+    data = data.replace(b'\xFF\xFF', b'\xFF')
     count = 0
     idx = 0
+
     while idx < len(data):
         pos = data.find(PREAMBLE, idx)
         if pos == -1:
             break
-        # Проверяем байт типа сообщения (смещение 3: 2 байта преамбулы + 1 байт версии)
-        if pos + 3 < len(data) and data[pos + 3] == MsgType.ACK:
-            count += 1
-            idx = pos + 9  # Длина ACK кадра = 9 байт
+
+        # Убеждаемся, что хватает байт для заголовка (7 байт)
+        if pos + 6 < len(data):
+            msg_type = data[pos + 3]
+            payload_len = (data[pos + 5] << 8) | data[pos + 6]
+            total_frame_len = 2 + 5 + payload_len + 2 # Преамбула + Заголовок + Данные + CRC
+
+            if msg_type == expected_type:
+                count += 1
+
+            idx = pos + max(1, total_frame_len) # Перепрыгиваем обработанный пакет
         else:
-            idx = pos + 1
+            break
+
     return count
 
-
-def verify_mcu_readiness(
-    ser: serial.Serial, timeout: float = 0.5, retries: int = 5
-) -> bool:
-    """Проверяет готовность прошивки MCU в Renode отправкой PING кадра."""
-    ping_frame = build_frame(
-        CURRENT_VERSION, MsgType.COMMAND, seq_num=0xFE, payload=b"PING"
-    )
+def verify_mcu_readiness(ser: serial.Serial, timeout: float = 0.5, retries: int = 5) -> bool:
+    ping_frame = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=0xFE, payload=b"PING")
 
     for _ in range(retries):
         ser.reset_input_buffer()
-        ser.write(ping_frame)
+        ser.write(ping_frame.replace(b'\xFF', b'\xFF\xFF'))
 
         start_time = time.time()
         rx_buffer = b""
@@ -86,210 +79,151 @@ def verify_mcu_readiness(
                 rx_buffer += ser.read(ser.in_waiting)
             time.sleep(0.01)
 
-        if count_ack_responses(rx_buffer) > 0:
+        # Ожидаем STATS_RESP (0x11), а не ACK!
+        if count_responses(rx_buffer, MsgType.STATS_RESP) > 0:
             return True
 
     return False
 
-
 def generate_test_cases():
-    """Формирование 12 тестовых наборов в соответствии с ТЗ."""
     test_cases = []
 
-    # 1. Штатный кадр (пустой payload)
     test_cases.append({
         "name": "1. Standard frame with empty payload",
-        "data": build_frame(
-            CURRENT_VERSION, MsgType.COMMAND, seq_num=0, payload=b""
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=0, payload=b""),
         "expected": "SUCCESS",
+        "expected_type": MsgType.STATS_RESP
     })
 
-    # 2. Штатный кадр с данными
     test_cases.append({
         "name": "2. Standard frame with regular payload",
-        "data": build_frame(
-            CURRENT_VERSION, MsgType.DATA, seq_num=1, payload=b"Hello STM32"
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=1, payload=b"Hello STM32"),
         "expected": "SUCCESS",
+        "expected_type": MsgType.ACK
     })
 
-    # 3. Граница: Максимально допустимая длина payload (512 байт)
-    max_payload = b"\x55" * MAX_ALLOWED_PAYLOAD_SIZE
     test_cases.append({
         "name": "3. Boundary: Max payload size (512 bytes)",
-        "data": build_frame(
-            CURRENT_VERSION, MsgType.DATA, seq_num=2, payload=max_payload
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=2, payload=b"\x55" * MAX_ALLOWED_PAYLOAD_SIZE),
         "expected": "SUCCESS",
+        "expected_type": MsgType.ACK
     })
 
-    # 4. Граница: Превышение длины payload (513 байт)
-    oversized_payload = b"\xAA" * (MAX_ALLOWED_PAYLOAD_SIZE + 1)
     test_cases.append({
         "name": "4. Boundary: Payload too large (513 bytes)",
-        "data": build_frame(
-            CURRENT_VERSION, MsgType.DATA, seq_num=3, payload=oversized_payload
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=3, payload=b"\xAA" * (MAX_ALLOWED_PAYLOAD_SIZE + 1)),
         "expected": "SILENCE",
+        "expected_type": MsgType.ACK
     })
 
-    # 5. Граница: Преамбула внутри payload
-    payload_with_preamble = b"Some data \xAA\x55 hidden inside"
     test_cases.append({
         "name": "5. Boundary: Preamble inside payload",
-        "data": build_frame(
-            CURRENT_VERSION,
-            MsgType.COMMAND,
-            seq_num=4,
-            payload=payload_with_preamble,
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=4, payload=b"Some data \xAA\x55 hidden inside"),
         "expected": "SUCCESS",
+        "expected_type": MsgType.STATS_RESP
     })
 
-    # 6. Ошибка: Неверная контрольная сумма
     test_cases.append({
         "name": "6. Error: Corrupted CRC",
-        "data": build_frame(
-            CURRENT_VERSION,
-            MsgType.COMMAND,
-            seq_num=5,
-            payload=b"Test CRC",
-            corrupt_crc=True,
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=5, payload=b"Test CRC", corrupt_crc=True),
         "expected": "SILENCE",
+        "expected_type": MsgType.STATS_RESP
     })
 
-    # 7. Ошибка: Неподдерживаемая версия
     test_cases.append({
         "name": "7. Error: Bad protocol version",
-        "data": build_frame(
-            0x02, MsgType.COMMAND, seq_num=6, payload=b"Bad Version"
-        ),
+        "data": build_frame(0x02, MsgType.COMMAND, seq_num=6, payload=b"Bad Version"),
         "expected": "SILENCE",
+        "expected_type": MsgType.STATS_RESP
     })
 
-    # 8. Обрыв кадра
-    full_frame = build_frame(
-        CURRENT_VERSION, MsgType.DATA, seq_num=7, payload=b"Cut me please"
-    )
+    full_frame = build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=7, payload=b"Cut me please")
     test_cases.append({
         "name": "8. Incomplete frame (Cut in the middle)",
         "data": full_frame[: len(full_frame) - 3],
         "expected": "SILENCE",
+        "expected_type": MsgType.ACK
     })
 
-    # 9. Мусор перед преамбулой (Ресинхронизация)
-    garbage_prefix = b"\x00\xFF\x12\x34" + build_frame(
-        CURRENT_VERSION,
-        MsgType.COMMAND,
-        seq_num=8,
-        payload=b"After garbage",
-    )
+    garbage_prefix = b"\x00\xFF\x12\x34" + build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=8, payload=b"After garbage")
     test_cases.append({
         "name": "9. Resync test: Garbage before preamble",
         "data": garbage_prefix,
         "expected": "SUCCESS",
+        "expected_type": MsgType.STATS_RESP
     })
 
-    # 10. Переполнение seq_num (0x00) — изменен тип на DATA вместо ACK
     test_cases.append({
         "name": "10. Sequence number wrap-around (seq = 0)",
-        "data": build_frame(
-            CURRENT_VERSION, MsgType.DATA, seq_num=0, payload=b"Wrap"
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=0, payload=b"Wrap"),
         "expected": "SUCCESS",
+        "expected_type": MsgType.ACK
     })
 
-    # 11. Максимальный seq_num (0xFF) — изменен тип на DATA вместо ACK
     test_cases.append({
         "name": "11. Maximum sequence number (seq = 255)",
-        "data": build_frame(
-            CURRENT_VERSION, MsgType.DATA, seq_num=255, payload=b"Max Seq"
-        ),
+        "data": build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=255, payload=b"Max Seq"),
         "expected": "SUCCESS",
+        "expected_type": MsgType.ACK
     })
 
-    # 12. Поток из двух склеенных кадров
-    frame1 = build_frame(
-        CURRENT_VERSION, MsgType.COMMAND, seq_num=10, payload=b"First"
-    )
-    frame2 = build_frame(
-        CURRENT_VERSION, MsgType.COMMAND, seq_num=11, payload=b"Second"
-    )
+    frame1 = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=10, payload=b"First")
+    frame2 = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=11, payload=b"Second")
     test_cases.append({
         "name": "12. Concatenated back-to-back frames",
         "data": frame1 + frame2,
         "expected": "SUCCESS_DOUBLE",
+        "expected_type": MsgType.STATS_RESP
     })
 
     return test_cases
 
 def run_single_test(ser: serial.Serial, test: dict, timeout: float = 0.5) -> bool:
-    """Выполняет один тест и сверяет результат."""
     ser.reset_input_buffer()
 
-    # === TELNET ESCAPE FIX ===
-    # Экранируем байт 0xFF для Telnet-сервера Renode, заменяя его на 0xFF 0xFF
     raw_data = test["data"].replace(b'\xFF', b'\xFF\xFF')
     ser.write(raw_data)
 
     start_time = time.time()
     rx_buffer = b""
 
-    # Накапливаем ответ за отведённый таймаут
     while time.time() - start_time < timeout:
         if ser.in_waiting > 0:
             rx_buffer += ser.read(ser.in_waiting)
         time.sleep(0.01)
 
-    ack_count = count_ack_responses(rx_buffer)
+    expected_type = test["expected_type"]
+    resp_count = count_responses(rx_buffer, expected_type)
     expected = test["expected"]
 
     if expected == "SUCCESS":
-        if ack_count >= 1:
-            print("    ✅ Passed: ACK получен")
+        if resp_count >= 1:
+            print(f"    ✅ Passed: Корректный ответ (0x{expected_type:02X}) получен")
             return True
-        print("    ❌ Failed: ACK не получен (таймаут)")
+        print(f"    ❌ Failed: Ответ (0x{expected_type:02X}) не получен (таймаут)")
         return False
 
     elif expected == "SUCCESS_DOUBLE":
-        if ack_count == 2:
-            print("    ✅ Passed: Получено 2 ACK кадра")
+        if resp_count == 2:
+            print(f"    ✅ Passed: Получено 2 пакета (0x{expected_type:02X})")
             return True
-        print(f"    ❌ Failed: Ожидалось 2 ACK, получено {ack_count}")
+        print(f"    ❌ Failed: Ожидалось 2 пакета, получено {resp_count}")
         return False
 
     elif expected == "SILENCE":
-        if ack_count == 0:
-            print("    ✅ Passed: Некорректный пакет проигнорирован (ACK отсутствует)")
+        if resp_count == 0:
+            print("    ✅ Passed: Некорректный пакет штатно проигнорирован")
             return True
-        print("    ❌ Failed: Получен ACK на ошибочный пакет!")
+        print("    ❌ Failed: Получен ответ на заведомо ошибочный пакет!")
         return False
 
     return False
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Renode Integration Test Runner"
-    )
-    parser.add_argument(
-        "--url",
-        default="socket://localhost:4321",
-        help="Serial/Socket connection URL",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=0.5,
-        help="Timeout for single test response (seconds)",
-    )
-    parser.add_argument(
-        "--retries",
-        type=int,
-        default=10,
-        help="Max connection attempts to Renode socket",
-    )
+    parser = argparse.ArgumentParser(description="Renode Integration Test Runner")
+    parser.add_argument("--url", default="socket://localhost:4321")
+    parser.add_argument("--timeout", type=float, default=0.5)
+    parser.add_argument("--retries", type=int, default=10)
     args = parser.parse_args()
 
     print("=== ЗАПУСК ИНТЕГРАЦИОННЫХ ТЕСТОВ В RENODE ===")
@@ -303,29 +237,17 @@ def main():
             ser = serial.serial_for_url(args.url, timeout=0.1)
             if verify_mcu_readiness(ser, timeout=args.timeout):
                 connected_and_ready = True
-                print(
-                    "✅ Соединение с Renode и прошивкой MCU успешно"
-                    " установлено!\n"
-                )
+                print("✅ Соединение с Renode и прошивкой MCU успешно установлено!\n")
                 break
             else:
                 ser.close()
-                print(
-                    f"  [Попытка {attempt}/{args.retries}] Сокет открыт, но"
-                    " MCU не отвечает на PING..."
-                )
+                print(f"  [Попытка {attempt}/{args.retries}] Сокет открыт, но MCU не отвечает на PING...")
         except serial.SerialException:
-            print(
-                f"  [Попытка {attempt}/{args.retries}] Ожидание открытия"
-                " сокета Renode..."
-            )
+            print(f"  [Попытка {attempt}/{args.retries}] Ожидание открытия сокета Renode...")
         time.sleep(0.5)
 
     if not connected_and_ready or ser is None:
-        print(
-            "\n❌ Ошибка: Не удалось установить связь с прошивкой в Renode"
-            f" ({args.url})"
-        )
+        print(f"\n❌ Ошибка: Не удалось установить связь с прошивкой в Renode ({args.url})")
         sys.exit(1)
 
     test_cases = generate_test_cases()
@@ -333,12 +255,10 @@ def main():
 
     with ser:
         ser.reset_input_buffer()
-
         for idx, tc in enumerate(test_cases, 1):
             print(f"[TEST {idx}/{len(test_cases)}] {tc['name']}")
             if not run_single_test(ser, tc, timeout=args.timeout):
                 failed_count += 1
-            # Пауза 50 мс для стабильной очистки TCP-буферов между тестами
             time.sleep(0.05)
 
     print("=" * 60)
@@ -346,11 +266,8 @@ def main():
         print(f"🎉 УСПЕХ: Все {len(test_cases)} тестов успешно пройдены!")
         sys.exit(0)
     else:
-        print(
-            f"💥 ОШИБКА: Провалено тестов: {failed_count} из {len(test_cases)}"
-        )
+        print(f"💥 ОШИБКА: Провалено тестов: {failed_count} из {len(test_cases)}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
