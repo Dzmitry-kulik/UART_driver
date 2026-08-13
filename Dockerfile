@@ -1,4 +1,4 @@
-FROM ghcr.io/Dzmitry-kulik/stm32-ci-base:latest AS builder
+FROM ghcr.io/dzmitry-kulik/stm32-ci-base:latest AS builder
 
 WORKDIR /app
 COPY . .
