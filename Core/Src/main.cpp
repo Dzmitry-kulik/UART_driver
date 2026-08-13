@@ -53,6 +53,10 @@ volatile size_t g_read_pos = 0;
 
 volatile bool g_data_received_event = false;
 
+// Флаги для реализации гарантированной доставки (Stop-and-Wait ARQ)
+volatile bool g_ack_received = false;
+volatile uint8_t g_waiting_seq_num = 0;
+
 protocol::DiagnosticsStats g_stats{};
 protocol::DiagnosticsService g_diagnostics(g_stats);
 protocol::UartTxManager g_tx_manager(huart1);
@@ -135,9 +139,6 @@ inline uint16_t get_dma_rx_counter(void) {
   return static_cast<uint16_t>(__HAL_DMA_GET_COUNTER(huart1.hdmarx));
 }
 
-/**
- * @brief Функция вычитания байт из кольцевого буфера DMA
- */
 inline void process_dma_rx_bytes(void) {
 #ifndef CI_RENODE_TEST
   size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
@@ -153,13 +154,11 @@ inline void process_dma_rx_bytes(void) {
 #endif
 }
 
-/**
- * @brief Попотоковая отправка текста с контролем ARQ (ожидание ACK)
- */
 void send_lorem_ipsum_stream(protocol::UartTxManager &tx_mgr) {
   static uint8_t seq_num = 0;
   constexpr size_t CHUNK_SIZE = 256;
-  constexpr uint8_t MSG_TYPE_DATA = 0x01;
+  constexpr uint8_t MSG_TYPE_DATA =
+      static_cast<uint8_t>(protocol::MessageType::DATA);
 
   const size_t total_len = sizeof(LOREM_IPSUM) - 1;
   size_t offset = 0;
@@ -170,35 +169,46 @@ void send_lorem_ipsum_stream(protocol::UartTxManager &tx_mgr) {
     const uint8_t *chunk_ptr =
         reinterpret_cast<const uint8_t *>(LOREM_IPSUM + offset);
 
-    // 1. Пытаемся отправить кадр с контролем доставки (таймаут 150мс, 3
-    // попытки)
-    while (!tx_mgr.send_frame_with_ack(MSG_TYPE_DATA, seq_num, chunk_ptr,
-                                       bytes_to_send, 150, 3)) {
-      tx_mgr.process_timeouts(HAL_GetTick());
-      process_dma_rx_bytes();
+    uint8_t retries = 0;
+    bool delivered = false;
+
+    while (!delivered && retries < 3) {
+      g_ack_received = false;
+      g_waiting_seq_num = seq_num;
+
+      while (!tx_mgr.send_frame(MSG_TYPE_DATA, seq_num, chunk_ptr,
+                                bytes_to_send)) {
+        process_dma_rx_bytes();
+      }
+
+      uint32_t start_time = HAL_GetTick();
+      while ((HAL_GetTick() - start_time) < 150) {
+        process_dma_rx_bytes();
+        if (g_ack_received) {
+          delivered = true;
+          break;
+        }
+      }
+
+      if (!delivered)
+        retries++;
     }
 
-    // 2. Ждем, пока кадр будет успешно подтвержден (или сброшен по превышению
-    // попыток)
-    while (tx_mgr.is_waiting_ack()) {
-      tx_mgr.process_timeouts(HAL_GetTick());
-      process_dma_rx_bytes();
-    }
+    if (!delivered)
+      break;
 
     seq_num++;
     offset += bytes_to_send;
   }
 }
 
-/**
- * @brief Неблокирующая проверка нажатия кнопки с антидребезгом (50 мс).
- */
 bool is_button_pressed_debounced() {
   static uint32_t last_change_time = 0;
   static GPIO_PinState last_state = GPIO_PIN_SET;
   static bool button_handled = false;
 
   GPIO_PinState current_state = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
+
   if (current_state != last_state) {
     last_change_time = HAL_GetTick();
     last_state = current_state;
@@ -228,26 +238,28 @@ void on_frame_parsed(
 
   g_stats.rx_frames_ok++;
 
-  uint8_t type_val = static_cast<uint8_t>(frame.type);
-
-  // 1. Пришли данные (DATA) -> отвечаем ACK
-  if (type_val == 0x01) {
-    uint8_t ack_frame[9] = {0xAA,          0x55, 0x01,
-                            0x02, // MSG_TYPE_ACK
-                            frame.seq_num, 0x00, 0x00, 0x00, 0x00};
+  if (frame.type == protocol::MessageType::DATA) {
+    uint8_t ack_frame[9] = {
+        0xAA,          0x55,
+        0x01,          static_cast<uint8_t>(protocol::MessageType::ACK),
+        frame.seq_num, 0x00,
+        0x00,          0x00,
+        0x00};
 
     uint16_t crc = protocol::Crc16::calculate(&ack_frame[2], 5);
     ack_frame[7] = static_cast<uint8_t>((crc >> 8) & 0xFF);
     ack_frame[8] = static_cast<uint8_t>(crc & 0xFF);
 
-    g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
-  }
-  // 2. Пришел ACK -> передаем его менеджеру
-  else if (type_val == 0x02) {
-    g_tx_manager.on_ack_received(frame.seq_num);
-  }
-  // 3. Запрос телеметрии (GET_STATS) от Python-теста
-  else if (type_val == 0x10) {
+    if (g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame))) {
+      g_stats.tx_frames_ok++;
+    }
+
+  } else if (frame.type == protocol::MessageType::ACK) {
+    if (frame.seq_num == g_waiting_seq_num) {
+      g_ack_received = true;
+    }
+
+  } else if (frame.type == protocol::MessageType::GET_STATS) {
     constexpr size_t stats_len = sizeof(protocol::DiagnosticsStats);
     constexpr size_t frame_len = 9 + stats_len;
 
@@ -255,7 +267,7 @@ void on_frame_parsed(
     resp_frame[0] = 0xAA;
     resp_frame[1] = 0x55;
     resp_frame[2] = 0x01;
-    resp_frame[3] = 0x11; // STATS_RESP
+    resp_frame[3] = static_cast<uint8_t>(protocol::MessageType::STATS_RESP);
     resp_frame[4] = frame.seq_num;
     resp_frame[5] = static_cast<uint8_t>((stats_len >> 8) & 0xFF);
     resp_frame[6] = static_cast<uint8_t>(stats_len & 0xFF);
@@ -266,7 +278,9 @@ void on_frame_parsed(
     resp_frame[frame_len - 2] = static_cast<uint8_t>((crc >> 8) & 0xFF);
     resp_frame[frame_len - 1] = static_cast<uint8_t>(crc & 0xFF);
 
-    g_tx_manager.send_bytes(resp_frame, frame_len);
+    if (g_tx_manager.send_bytes(resp_frame, frame_len)) {
+      g_stats.tx_frames_ok++;
+    }
   }
 }
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
@@ -298,10 +312,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 }
 /* USER CODE END 0 */
 
-/**
- * @brief  The application entry point.
- * @retval int
- */
 int main(void) {
   (void)g_read_pos;
 
@@ -327,20 +337,15 @@ int main(void) {
 
   /* Infinite loop */
   while (1) {
-    // 1. Проверяем таймауты ACK
     g_tx_manager.process_timeouts(HAL_GetTick());
 
 #ifndef CI_RENODE_TEST
-    // 2. Реакция на кнопку
     if (is_button_pressed_debounced()) {
       send_lorem_ipsum_stream(g_tx_manager);
     }
 #endif
 
-    // 3. Таймаут FSM парсера
     g_parser.check_timeout(HAL_GetTick(), 200);
-
-    // 4. Вычитка входящих байт
     process_dma_rx_bytes();
   }
 }
