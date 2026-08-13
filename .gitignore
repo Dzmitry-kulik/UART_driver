@@ -1,0 +1,22 @@
+# Служебные папки IDE и отладки
+.metadata/
+.settings/
+**/ .settings/
+debugging/
+
+# Служебные файлы проектов Eclipse / STM32CubeIDE
+.project
+.cproject
+.mxproject
+
+# Временные директории сборки
+build/
+build_prod/
+build_host/
+Debug/
+Release/
+
+# Системные файлы
+*.log
+*.tmp
+.DS_Store

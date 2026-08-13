@@ -13,17 +13,16 @@ if(ENABLE_COVERAGE)
     # ==============================================================================
     # РЕЖИМ 1: СБОРКА HOST UNIT-ТЕСТОВ С ПОКРЫТИЕМ (x86 GCC)
     # ==============================================================================
-    # Флаги профилирования gcov/gcovr
-    add_compile_options(--coverage -O0 -g)
-    add_link_options(--coverage)
-
-    # Исполняемый файл юнит-тестов для ПК
     add_executable(fsm_unit_tests
         tests/unit/test_fsm_parser.cpp
         Core/Src/protocol/src/FSM_parser.cpp
         Core/Src/protocol/src/diagnostics.cpp
         Core/Src/protocol/src/circular_buf.cpp
     )
+
+    # Флаги профилирования gcov/gcovr изолированно для таргета
+    target_compile_options(fsm_unit_tests PRIVATE --coverage -O0 -g)
+    target_link_options(fsm_unit_tests PRIVATE --coverage)
 
     # Активация макроса подмены HAL_GetTick на ПК
     target_compile_definitions(fsm_unit_tests PRIVATE HOST_UNIT_TEST)
@@ -38,8 +37,6 @@ else()
     # ==============================================================================
     # РЕЖИМ 2: СБОРКА ПРОШИВКИ ДЛЯ STM32F411CEU6 (ARM Cortex-M4)
     # ==============================================================================
-    set(CMAKE_SYSTEM_NAME Generic)
-    set(CMAKE_SYSTEM_PROCESSOR cortex-m4)
 
     # Опции компиляции и линковки для STM32F411CEU6
     set(CPU_OPTIONS
@@ -52,8 +49,8 @@ else()
     # Объявляем таргет С РАСШИРЕНИЕМ .elf
     add_executable(UART_DRIVER.elf)
 
-    # Автоматически находим все исходные файлы HAL-библиотеки
-    file(GLOB HAL_SOURCES "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
+    # Автоматически находим все исходные файлы HAL-библиотеки с отслеживанием
+    file(GLOB HAL_SOURCES CONFIGURE_DEPENDS "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
 
     # Исходные файлы проекта
     target_sources(UART_DRIVER.elf PRIVATE
@@ -110,5 +107,6 @@ else()
         -T${CMAKE_CURRENT_SOURCE_DIR}/STM32F411CEUX_FLASH.ld
         -Wl,-Map=${PROJECT_NAME}.map,--cref
         -Wl,--gc-sections
+        -Wl,--no-warn-rwx-segments
     )
 endif()

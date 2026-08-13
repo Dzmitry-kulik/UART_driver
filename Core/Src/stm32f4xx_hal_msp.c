@@ -150,12 +150,9 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
     }
     __HAL_LINKDMA(huart, hdmarx, hdma_usart1_rx);
 
-    /* ✅ КРИТИЧЕСКИ ВАЖНО: Разрешаем прерывания DMA в контроллере NVIC */
-    /* DMA2_Stream2_IRQn (RX) */
     HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
 
-    /* DMA2_Stream7_IRQn (TX) */
     HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
 
