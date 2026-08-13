@@ -158,6 +158,14 @@ void MX_GPIO_Init(void) {
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* Настройка пина PA0 как Вход (Input) с подтяжкой (Pull-up) для кнопки KEY */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
