@@ -53,13 +53,11 @@ def count_responses(data: bytes, expected_type: int) -> int:
             if msg_type == expected_type:
                 count += 1
 
-        # ВАЖНО: Всегда сдвигаемся только на 2 байта (размер преамбулы)!
-        # Это гарантирует, что мы не перепрыгнем слипшийся следующий пакет.
         idx = pos + 2
 
     return count
 
-def verify_mcu_readiness(ser: serial.Serial, timeout: float = 0.5, retries: int = 5) -> bool:
+def verify_mcu_readiness(ser: serial.Serial, timeout: float = 1.0, retries: int = 5) -> bool:
     ping_frame = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=0xFE, payload=b"PING")
 
     for _ in range(retries):
@@ -72,10 +70,10 @@ def verify_mcu_readiness(ser: serial.Serial, timeout: float = 0.5, retries: int 
         while time.time() - start_time < timeout:
             if ser.in_waiting > 0:
                 rx_buffer += ser.read(ser.in_waiting)
-            time.sleep(0.01)
 
-        if count_responses(rx_buffer, MsgType.STATS_RESP) > 0:
-            return True
+            if count_responses(rx_buffer, MsgType.STATS_RESP) > 0:
+                return True
+            time.sleep(0.01)
 
     return False
 
@@ -172,7 +170,7 @@ def generate_test_cases():
 
     return test_cases
 
-def run_single_test(ser: serial.Serial, test: dict, timeout: float = 0.5) -> bool:
+def run_single_test(ser: serial.Serial, test: dict, timeout: float = 2.0) -> bool:
     ser.reset_input_buffer()
 
     raw_data = test["data"].replace(b'\xFF', b'\xFF\xFF')
@@ -181,14 +179,23 @@ def run_single_test(ser: serial.Serial, test: dict, timeout: float = 0.5) -> boo
     start_time = time.time()
     rx_buffer = b""
 
+    expected_type = test["expected_type"]
+    expected = test["expected"]
+
+    # Определяем сколько пакетов мы ждем
+    target_count = 2 if expected == "SUCCESS_DOUBLE" else (1 if expected == "SUCCESS" else 0)
+
+    # Крутимся до 2 секунд, но если пакеты прилетели раньше - мгновенно выходим!
     while time.time() - start_time < timeout:
         if ser.in_waiting > 0:
             rx_buffer += ser.read(ser.in_waiting)
+
+        if target_count > 0 and count_responses(rx_buffer, expected_type) >= target_count:
+            break
+
         time.sleep(0.01)
 
-    expected_type = test["expected_type"]
     resp_count = count_responses(rx_buffer, expected_type)
-    expected = test["expected"]
 
     if expected == "SUCCESS":
         if resp_count >= 1:
@@ -216,7 +223,8 @@ def run_single_test(ser: serial.Serial, test: dict, timeout: float = 0.5) -> boo
 def main():
     parser = argparse.ArgumentParser(description="Renode Integration Test Runner")
     parser.add_argument("--url", default="socket://localhost:4321")
-    parser.add_argument("--timeout", type=float, default=0.5)
+    # Базовый таймаут увеличен до 2.0 секунд для страховки эмулятора
+    parser.add_argument("--timeout", type=float, default=2.0)
     parser.add_argument("--retries", type=int, default=10)
     args = parser.parse_args()
 
