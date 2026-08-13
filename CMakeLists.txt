@@ -21,7 +21,7 @@ if(ENABLE_COVERAGE)
     )
 
     # Флаги профилирования gcov/gcovr изолированно для таргета
-    target_compile_options(fsm_unit_tests PRIVATE --coverage -O0 -g)
+    target_compile_options(fsm_unit_tests PRIVATE --coverage -O0 -g3)
     target_link_options(fsm_unit_tests PRIVATE --coverage)
 
     # Активация макроса подмены HAL_GetTick на ПК
@@ -90,9 +90,11 @@ else()
         USE_HAL_DRIVER
     )
 
-    # Флаги компилятора
+    # Флаги компилятора (С ПОЛНЫМ ОТКЛЮЧЕНИЕМ ОПТИМИЗАЦИЙ ДЛЯ ОТЛАДКИ)
     target_compile_options(UART_DRIVER.elf PRIVATE
         ${CPU_OPTIONS}
+        -O0
+        -g3
         -Wno-unused-parameter
         -fdata-sections
         -ffunction-sections
