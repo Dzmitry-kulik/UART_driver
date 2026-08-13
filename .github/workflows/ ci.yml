@@ -21,23 +21,21 @@ jobs:
           import os, re
 
           def strip_single_line_comments(code):
-              # Захватываем //, /* */ и строковые литералы
               pattern = re.compile(
                   r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
                   re.DOTALL | re.MULTILINE
               )
               def replacer(match):
                   s = match.group(0)
-                  # Удаляем ТОЛЬКО однострочные комментарии
-                  if s.startswith("//"):
-                      return ""
-                  # Многострочные комментарии (/*...*/) и строки возвращаем без изменений
-                  return s
+                  return "" if s.startswith("//") else s
 
               return re.sub(pattern, replacer, code)
 
-          # Проходим по всем файлам исходного кода
-          for root, _, files in os.walk("."):
+          EXCLUDE_DIRS = {'.git', 'build', 'build_out', '.cache'}
+
+          for root, dirs, files in os.walk("."):
+              # Не заходим в системные и сборочные папки
+              dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
               for file in files:
                   if file.endswith((".c", ".cpp", ".h", ".hpp")):
                       path = os.path.join(root, file)
@@ -50,23 +48,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Единый шаг: Компиляция C++, проверка размера Flash и интеграционные тесты в Renode
+      # Оптимизированный шаг: Использует кэш GitHub Actions для Docker-слоев
       - name: Build Firmware, Check Size & Run Renode Tests
-        run: |
-          docker build --target artifacts --output type=local,dest=./build_out .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: artifacts
+          outputs: type=local,dest=./build_out
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # Загрузка проверенной и протестированной прошивки в артефакты
-      - name: Upload Verified Firmware Artifact
+      # Объединенный шаг загрузки проверенных артефактов
+      - name: Upload Verified Firmware & Benchmark Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stm32-firmware-verified
-          path: build_out/UART_DRIVER.elf
-          retention-days: 7
-
-      # ДОБАВЛЕНО: Загрузка графика бенчмарка в артефакты
-      - name: Upload Benchmark Chart
-        uses: actions/upload-artifact@v4
-        with:
-          name: throughput-benchmark-chart
-          path: build_out/benchmark_results.png
+          name: stm32-firmware-and-reports
+          path: |
+            build_out/UART_DRIVER.elf
+            build_out/benchmark_results.png
           retention-days: 7
