@@ -3,7 +3,7 @@ FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ДОБАВЛЕНО: python3-matplotlib для генерации графиков
+# Установка зависимостей
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
@@ -52,7 +52,7 @@ RUN cmake -B build_host -DENABLE_COVERAGE=ON && \
     gcovr --gcov-executable gcov-12 -r . --filter "Core/Src/protocol/src/FSM_parser.cpp" --fail-under-line 80
 
 # ==============================================================================
-# ШАГ 2: Сборка прошивки для STM32 (ARM)
+# ШАГ 2: Сборка ТЕСТОВОЙ прошивки для STM32 (ARM)
 # ==============================================================================
 RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-DCI_RENODE_TEST" -DCMAKE_C_FLAGS="-DCI_RENODE_TEST" && \
     cmake --build build
@@ -60,7 +60,7 @@ RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Rel
 RUN python3 tests/check_size.py
 
 # ==============================================================================
-# ШАГ 3: Интеграционный прогон: Функционал + Бенчмарк + Стресс-тест
+# ШАГ 3: Интеграционный прогон в эмуляторе
 # ==============================================================================
 RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     sleep 5 && \
@@ -72,9 +72,16 @@ RUN renode --disable-xwt tests/test_board.resc & PID=$! && \
     kill $PID ; \
     exit $TEST_RESULT
 
+# ==============================================================================
+# ШАГ 4: Сборка БОЕВОЙ прошивки для реального железа (БЕЗ ФЛАГОВ)
+# Если тесты на шаге 3 упадут, эта сборка даже не начнется.
+# ==============================================================================
+RUN cmake -B build_prod -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build_prod
+
 # --- Этап 2: Подготовка артефактов (Artifacts Stage) ---
 FROM scratch AS artifacts
 
-COPY --from=builder /app/build/UART_DRIVER.elf /
-# ДОБАВЛЕНО: Экспорт сгенерированного графика наружу
+# Теперь мы отдаем наружу прошивку, собранную специально для реального МК!
+COPY --from=builder /app/build_prod/UART_DRIVER.elf /
 COPY --from=builder /app/build/benchmark_results.png /

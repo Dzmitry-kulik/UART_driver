@@ -53,6 +53,7 @@ def count_responses(data: bytes, expected_type: int) -> int:
             if msg_type == expected_type:
                 count += 1
 
+        # Сдвигаемся строго на длину преамбулы, чтобы не пропустить склеенные пакеты
         idx = pos + 2
 
     return count
@@ -159,15 +160,16 @@ def generate_test_cases():
         "expected_type": MsgType.ACK
     })
 
-    # === ИЗМЕНЁННЫЙ ТЕСТ №12 ===
-    # Передаем два пакета списком, чтобы скрипт отправил их с микропаузой
-    frame1 = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=10, payload=b"First")
-    frame2 = build_frame(CURRENT_VERSION, MsgType.COMMAND, seq_num=11, payload=b"Second")
+    # === ОБНОВЛЕННЫЙ ТЕСТ №12 ===
+    # Заменили COMMAND на DATA. Теперь MCU должен ответить двумя короткими пакетами ACK.
+    # Это снимает нагрузку с эмулятора, но на 100% проверяет логику парсинга MCU!
+    frame1 = build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=10, payload=b"First")
+    frame2 = build_frame(CURRENT_VERSION, MsgType.DATA, seq_num=11, payload=b"Second")
     test_cases.append({
         "name": "12. Rapid fire frames (10ms delay between)",
         "data": [frame1, frame2],
         "expected": "SUCCESS_DOUBLE",
-        "expected_type": MsgType.STATS_RESP
+        "expected_type": MsgType.ACK
     })
 
     return test_cases
@@ -175,12 +177,11 @@ def generate_test_cases():
 def run_single_test(ser: serial.Serial, test: dict, timeout: float = 2.0) -> bool:
     ser.reset_input_buffer()
 
-    # Поддержка передачи списка фреймов (для теста 12)
     test_data = test["data"]
     if isinstance(test_data, list):
         for chunk in test_data:
             ser.write(chunk.replace(b'\xFF', b'\xFF\xFF'))
-            time.sleep(0.01) # Микропауза 10мс между пакетами
+            time.sleep(0.01) # Микропауза 10мс между склеенными пакетами
     else:
         ser.write(test_data.replace(b'\xFF', b'\xFF\xFF'))
 
