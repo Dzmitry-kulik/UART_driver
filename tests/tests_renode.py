@@ -14,7 +14,7 @@ class MsgType:
     ACK = 0x02
     NACK = 0x03
     COMMAND = 0x10
-    STATS_RESP = 0x11  # Добавлен тип ответа со статистикой!
+    STATS_RESP = 0x11
 
 def calculate_crc16(data: bytes) -> int:
     crc = 0xFFFF
@@ -39,7 +39,6 @@ def build_frame(version: int, msg_type: int, seq_num: int, payload: bytes, corru
     return PREAMBLE + header + payload + struct.pack(">H", crc)
 
 def count_responses(data: bytes, expected_type: int) -> int:
-    """Умный парсер: снимает Telnet-экранирование и читает длину из заголовка."""
     data = data.replace(b'\xFF\xFF', b'\xFF')
     count = 0
     idx = 0
@@ -49,18 +48,14 @@ def count_responses(data: bytes, expected_type: int) -> int:
         if pos == -1:
             break
 
-        # Убеждаемся, что хватает байт для заголовка (7 байт)
         if pos + 6 < len(data):
             msg_type = data[pos + 3]
-            payload_len = (data[pos + 5] << 8) | data[pos + 6]
-            total_frame_len = 2 + 5 + payload_len + 2 # Преамбула + Заголовок + Данные + CRC
-
             if msg_type == expected_type:
                 count += 1
 
-            idx = pos + max(1, total_frame_len) # Перепрыгиваем обработанный пакет
-        else:
-            break
+        # ВАЖНО: Всегда сдвигаемся только на 2 байта (размер преамбулы)!
+        # Это гарантирует, что мы не перепрыгнем слипшийся следующий пакет.
+        idx = pos + 2
 
     return count
 
@@ -79,7 +74,6 @@ def verify_mcu_readiness(ser: serial.Serial, timeout: float = 0.5, retries: int 
                 rx_buffer += ser.read(ser.in_waiting)
             time.sleep(0.01)
 
-        # Ожидаем STATS_RESP (0x11), а не ACK!
         if count_responses(rx_buffer, MsgType.STATS_RESP) > 0:
             return True
 

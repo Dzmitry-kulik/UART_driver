@@ -34,16 +34,12 @@ bool UartTxManager::send_bytes(const uint8_t *data, size_t len) {
     return true;
   }
 
-  // 1. Только кладем байты в очередь.
   for (size_t i = 0; i < len; ++i) {
     if (!tx_queue_.push(data[i])) {
       return false;
     }
   }
 
-  // МЫ БОЛЬШЕ НЕ ВЫЗЫВАЕМ start_dma_transmission() ЗДЕСЬ!
-  // Функция мгновенно возвращает управление, чтобы не блокировать
-  // RX-прерывания.
   return true;
 }
 
@@ -115,7 +111,6 @@ void UartTxManager::on_ack_received(uint8_t seq_num) {
 }
 
 void UartTxManager::process_timeouts(uint32_t current_tick) {
-  // 1. Проверка таймаутов на ожидание ACK
   if (is_waiting_ack_) {
     if (current_tick - pending_last_send_time_ >= pending_timeout_ms_) {
       if (pending_retries_left_ > 0) {
@@ -129,7 +124,6 @@ void UartTxManager::process_timeouts(uint32_t current_tick) {
     }
   }
 
-  // 2. Выталкиваем накопившиеся данные в UART из главного цикла (Thread Mode)
   bool start_tx = false;
   __disable_irq();
   if (!is_transmitting_ && !tx_queue_.empty()) {
@@ -161,20 +155,11 @@ void UartTxManager::start_dma_transmission() {
 
   if (chunk_size > 0) {
 #ifdef CI_RENODE_TEST
-    // ЭМУЛЯТОР: Блокирующая отправка в безопасном главном цикле
-    for (size_t i = 0; i < chunk_size; ++i) {
-      while (__HAL_UART_GET_FLAG(&huart_, UART_FLAG_TXE) == RESET) {
-        // Ожидание установки флага
-      }
-      huart_.Instance->DR = (dma_tx_chunk_[i] & 0xFF);
-    }
-
+    // ЭМУЛЯТОР: Блокирующая отправка через стандартный HAL (абсолютно безопасно
+    // из главного цикла)
+    HAL_UART_Transmit(&huart_, dma_tx_chunk_, static_cast<uint16_t>(chunk_size),
+                      100);
     is_transmitting_ = false;
-
-    if (!tx_queue_.empty()) {
-      is_transmitting_ = true;
-      start_dma_transmission();
-    }
 #else
     // ЖЕЛЕЗО: Быстрая отправка через DMA
     if (HAL_UART_Transmit_DMA(&huart_, dma_tx_chunk_,
