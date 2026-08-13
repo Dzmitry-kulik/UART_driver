@@ -153,14 +153,26 @@ void UartTxManager::start_dma_transmission() {
     is_transmitting_ = true;
 
 #ifdef CI_RENODE_TEST
-    // ЭМУЛЯТОР: Отправляем байты сразу в сокет (синхронно, без прерываний)
-    HAL_UART_Transmit(&huart_, dma_tx_chunk_, static_cast<uint16_t>(chunk_size),
-                      1000);
+    // ЭМУЛЯТОР: Полностью обходим HAL и пишем напрямую в регистр данных (DR).
+    // Это гарантирует, что статус BUSY_TX не заблокирует передачу пакета.
+    for (size_t i = 0; i < chunk_size; ++i) {
+      // Ждем, пока аппаратный буфер передачи освободится
+      while (__HAL_UART_GET_FLAG(&huart_, UART_FLAG_TXE) == RESET) {
+        // Ожидание установки флага
+      }
+      // Пишем байт напрямую в регистр передачи UART
+      huart_.Instance->DR = (dma_tx_chunk_[i] & 0xFF);
+    }
+
+    // Мгновенно снимаем флаг передачи
     is_transmitting_ = false;
+
+    // Рекурсивно выталкиваем остатки, если очередь не пуста
     if (!tx_queue_.empty()) {
       start_dma_transmission();
     }
 #else
+    // ЖЕЛЕЗО: Оставляем быструю асинхронную отправку через DMA
     if (HAL_UART_Transmit_DMA(&huart_, dma_tx_chunk_,
                               static_cast<uint16_t>(chunk_size)) != HAL_OK) {
       is_transmitting_ = false;
