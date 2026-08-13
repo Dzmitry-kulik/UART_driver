@@ -5,13 +5,9 @@ namespace protocol {
 
 namespace {
 
-// Константы протокола
 constexpr uint8_t PREAMBLE[2] = {0xAA, 0x55};
 constexpr uint8_t PROTOCOL_VERSION = 0x01;
 
-/**
- * @brief Побайтовый расчёт CRC16-CCITT (Poly: 0x1021, Init: 0xFFFF)
- */
 uint16_t calculate_crc16_step(uint16_t crc, const uint8_t *data, size_t len) {
   if (!data)
     return crc;
@@ -55,48 +51,91 @@ bool UartTxManager::send_bytes(const uint8_t *data, size_t len) {
 
 bool UartTxManager::send_frame(uint8_t msg_type, uint8_t seq_num,
                                const uint8_t *payload, size_t len) {
-  // 1. Собираем заголовок (5 байт): Version (1B) + MsgType (1B) + SeqNum (1B) +
-  // PayloadLength (2B Big-Endian)
-  uint8_t header[5] = {
-      PROTOCOL_VERSION, msg_type, seq_num,
-      static_cast<uint8_t>((len >> 8) & 0xFF), // Length High
-      static_cast<uint8_t>(len & 0xFF)         // Length Low
-  };
+  uint8_t header[5] = {PROTOCOL_VERSION, msg_type, seq_num,
+                       static_cast<uint8_t>((len >> 8) & 0xFF),
+                       static_cast<uint8_t>(len & 0xFF)};
 
-  // 2. Вычисляем CRC16 от заголовка и полезной нагрузки
   uint16_t crc = calculate_crc16_step(0xFFFF, header, sizeof(header));
   if (payload && len > 0) {
     crc = calculate_crc16_step(crc, payload, len);
   }
 
-  uint8_t crc_bytes[2] = {
-      static_cast<uint8_t>((crc >> 8) & 0xFF), // CRC High
-      static_cast<uint8_t>(crc & 0xFF)         // CRC Low
-  };
+  uint8_t crc_bytes[2] = {static_cast<uint8_t>((crc >> 8) & 0xFF),
+                          static_cast<uint8_t>(crc & 0xFF)};
 
-  // 3. Последовательно помещаем все части кадра в очередь передачи
-  if (!send_bytes(PREAMBLE, sizeof(PREAMBLE))) {
+  if (!send_bytes(PREAMBLE, sizeof(PREAMBLE)))
     return false;
-  }
-  if (!send_bytes(header, sizeof(header))) {
+  if (!send_bytes(header, sizeof(header)))
     return false;
-  }
   if (payload && len > 0) {
-    if (!send_bytes(payload, len)) {
+    if (!send_bytes(payload, len))
       return false;
-    }
   }
-  if (!send_bytes(crc_bytes, sizeof(crc_bytes))) {
+  if (!send_bytes(crc_bytes, sizeof(crc_bytes)))
     return false;
-  }
 
   return true;
+}
+
+bool UartTxManager::send_frame_with_ack(uint8_t msg_type, uint8_t seq_num,
+                                        const uint8_t *payload, size_t len,
+                                        uint32_t timeout_ms,
+                                        uint8_t max_retries) {
+  if (is_waiting_ack_) {
+    return false;
+  }
+
+  if (len > MAX_PAYLOAD_SIZE) {
+    return false;
+  }
+
+  pending_msg_type_ = msg_type;
+  pending_seq_num_ = seq_num;
+  pending_payload_len_ = len;
+  if (payload && len > 0) {
+    for (size_t i = 0; i < len; ++i) {
+      pending_payload_[i] = payload[i];
+    }
+  }
+  pending_timeout_ms_ = timeout_ms;
+  pending_retries_left_ = max_retries;
+
+  if (!send_frame(msg_type, seq_num, payload, len)) {
+    return false;
+  }
+
+  is_waiting_ack_ = true;
+  pending_last_send_time_ = HAL_GetTick();
+
+  return true;
+}
+
+void UartTxManager::on_ack_received(uint8_t seq_num) {
+  if (is_waiting_ack_ && seq_num == pending_seq_num_) {
+    is_waiting_ack_ = false;
+  }
+}
+
+void UartTxManager::process_timeouts(uint32_t current_tick) {
+  if (!is_waiting_ack_) {
+    return;
+  }
+
+  if (current_tick - pending_last_send_time_ >= pending_timeout_ms_) {
+    if (pending_retries_left_ > 0) {
+      pending_retries_left_--;
+      send_frame(pending_msg_type_, pending_seq_num_, pending_payload_,
+                 pending_payload_len_);
+      pending_last_send_time_ = current_tick;
+    } else {
+      is_waiting_ack_ = false;
+    }
+  }
 }
 
 void UartTxManager::on_tx_complete_isr() {
   is_transmitting_ = false;
 
-  // Если в очереди остались данные, запускаем отправку следующего блока
   if (!tx_queue_.empty()) {
     start_dma_transmission();
   }
@@ -105,7 +144,6 @@ void UartTxManager::on_tx_complete_isr() {
 void UartTxManager::start_dma_transmission() {
   size_t chunk_size = 0;
 
-  // Вычитываем данные из кольцевой очереди во временный линейный буфер
   while (chunk_size < DMA_CHUNK_SIZE &&
          tx_queue_.pop(dma_tx_chunk_[chunk_size])) {
     chunk_size++;
@@ -115,16 +153,17 @@ void UartTxManager::start_dma_transmission() {
     is_transmitting_ = true;
 
 #ifdef CI_RENODE_TEST
-    // Эмулятор Renode: отправка по прерываниям (IT)
-    if (HAL_UART_Transmit_IT(&huart_, dma_tx_chunk_,
-                             static_cast<uint16_t>(chunk_size)) != HAL_OK) {
-      is_transmitting_ = false; // Сброс флага при сбое передачи
+    // ЭМУЛЯТОР: Отправляем байты сразу в сокет (синхронно, без прерываний)
+    HAL_UART_Transmit(&huart_, dma_tx_chunk_, static_cast<uint16_t>(chunk_size),
+                      1000);
+    is_transmitting_ = false;
+    if (!tx_queue_.empty()) {
+      start_dma_transmission();
     }
 #else
-    // Реальное железо: отправка через DMA
     if (HAL_UART_Transmit_DMA(&huart_, dma_tx_chunk_,
                               static_cast<uint16_t>(chunk_size)) != HAL_OK) {
-      is_transmitting_ = false; // Сброс флага при сбое передачи
+      is_transmitting_ = false;
     }
 #endif
   }

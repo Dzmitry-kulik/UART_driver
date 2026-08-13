@@ -4,16 +4,6 @@
  * @file           : main.cpp
  * @brief          : Main program body (UART Receiver & Transmitter)
  ******************************************************************************
- * @attention
- *
- * Copyright (c) 2026 STMicroelectronics.
- * All rights reserved.
- *
- * This software is licensed under terms that can be found in the LICENSE file
- * in the root directory of this software component.
- * If no LICENSE file comes with this software, it is provided AS-IS.
- *
- ******************************************************************************
  */
 /* USER CODE END Header */
 
@@ -32,6 +22,7 @@
 #include "diagnostics.hpp"
 #include "frame.hpp"
 #include "tx_manager.hpp"
+#include <cstring> // Для std::memcpy
 #include <expected>
 
 /* USER CODE END Includes */
@@ -79,6 +70,7 @@ void renode_process_rx_byte(uint8_t byte);
 
 /* USER CODE BEGIN PFP */
 inline uint16_t get_dma_rx_counter(void);
+inline void process_dma_rx_bytes(void);
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result);
 /* USER CODE END PFP */
@@ -86,7 +78,6 @@ void on_frame_parsed(
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// Текст сохраняется строго во FLASH-памяти (const char)
 static const char LOREM_IPSUM[] =
     R"(orem ipsum dolor sit amet, consectetur adipiscing elit. Sed molestie
 sit amet tellus sed fringilla. Integer efficitur urna augue, ut
@@ -140,30 +131,58 @@ vehicula lectus, id volutpat mi. In imperdiet arcu suscipit maximus
 pretium. Cras sed auctor diam. Maecenas ultricies in ligula vitae
 faucibus)";
 
+inline uint16_t get_dma_rx_counter(void) {
+  return static_cast<uint16_t>(__HAL_DMA_GET_COUNTER(huart1.hdmarx));
+}
+
 /**
- * @brief Разбивает большой массив текста на кадрах по CHUNK_SIZE и отправляет
- * их.
+ * @brief Функция вычитания байт из кольцевого буфера DMA
+ */
+inline void process_dma_rx_bytes(void) {
+#ifndef CI_RENODE_TEST
+  size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
+  if (g_data_received_event || (g_read_pos != dma_write_pos)) {
+    g_data_received_event = false;
+    while (g_read_pos != dma_write_pos) {
+      uint8_t byte = g_dma_rx_buffer[g_read_pos];
+      g_parser.process_byte(byte);
+      g_read_pos = (g_read_pos + 1) & DMA_RX_BUFFER_MASK;
+      dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
+    }
+  }
+#endif
+}
+
+/**
+ * @brief Попотоковая отправка текста с контролем ARQ (ожидание ACK)
  */
 void send_lorem_ipsum_stream(protocol::UartTxManager &tx_mgr) {
   static uint8_t seq_num = 0;
-  constexpr size_t CHUNK_SIZE = 256; // Размер полезной нагрузки на 1 кадр
+  constexpr size_t CHUNK_SIZE = 256;
   constexpr uint8_t MSG_TYPE_DATA = 0x01;
 
-  const size_t total_len = sizeof(LOREM_IPSUM) - 1; // Без NUL-терминатора
+  const size_t total_len = sizeof(LOREM_IPSUM) - 1;
   size_t offset = 0;
 
   while (offset < total_len) {
     size_t bytes_to_send =
         (total_len - offset > CHUNK_SIZE) ? CHUNK_SIZE : (total_len - offset);
-
     const uint8_t *chunk_ptr =
         reinterpret_cast<const uint8_t *>(LOREM_IPSUM + offset);
 
-    // Пытаемся добавить кадр в очередь.
-    // Если очередь заполнена, ждем освобождения места через DMA/прерывания
-    while (
-        !tx_mgr.send_frame(MSG_TYPE_DATA, seq_num, chunk_ptr, bytes_to_send)) {
-      // Пауза не нужна — DMA отправляет данные в фоне и освобождает tx_queue
+    // 1. Пытаемся отправить кадр с контролем доставки (таймаут 150мс, 3
+    // попытки)
+    while (!tx_mgr.send_frame_with_ack(MSG_TYPE_DATA, seq_num, chunk_ptr,
+                                       bytes_to_send, 150, 3)) {
+      tx_mgr.process_timeouts(HAL_GetTick());
+      process_dma_rx_bytes();
+    }
+
+    // 2. Ждем, пока кадр будет успешно подтвержден (или сброшен по превышению
+    // попыток)
+    while (tx_mgr.is_waiting_ack()) {
+      tx_mgr.process_timeouts(HAL_GetTick());
+      process_dma_rx_bytes();
     }
 
     seq_num++;
@@ -173,16 +192,13 @@ void send_lorem_ipsum_stream(protocol::UartTxManager &tx_mgr) {
 
 /**
  * @brief Неблокирующая проверка нажатия кнопки с антидребезгом (50 мс).
- * @note Для Кнопки KEY на PA0: подтяжка Pull-Up, нажатие = GPIO_PIN_RESET.
  */
 bool is_button_pressed_debounced() {
   static uint32_t last_change_time = 0;
   static GPIO_PinState last_state = GPIO_PIN_SET;
   static bool button_handled = false;
 
-  // Убедитесь, что кнопка настроена именно на PA0 в CubeMX
   GPIO_PinState current_state = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
-
   if (current_state != last_state) {
     last_change_time = HAL_GetTick();
     last_state = current_state;
@@ -192,50 +208,65 @@ bool is_button_pressed_debounced() {
     if (current_state == GPIO_PIN_RESET) {
       if (!button_handled) {
         button_handled = true;
-        return true; // Фиксируем единственное нажатие
+        return true;
       }
     } else {
-      button_handled = false; // Кнопка отпущена
+      button_handled = false;
     }
   }
   return false;
 }
 
-inline uint16_t get_dma_rx_counter(void) {
-  return static_cast<uint16_t>(__HAL_DMA_GET_COUNTER(huart1.hdmarx));
-}
-
 void on_frame_parsed(
     const std::expected<protocol::Frame, protocol::ParseError> &result) {
-  if (result.has_value()) {
-    const auto &frame = result.value();
-    if (frame.version != 0x01) {
-      return;
-    }
+  if (!result.has_value())
+    return;
 
-    g_stats.rx_frames_ok++;
+  const auto &frame = result.value();
+  if (frame.version != 0x01)
+    return;
 
-    uint8_t ack_frame[9] = {
-        0xAA, 0x55, // Преамбула
-        0x01,       // Версия
-        0x02,       // Тип (ACK)
-        0x00,       // seq_num
-        0x00, 0x00, // Длина payload = 0
-        0x00, 0x00  // Место под CRC
-    };
+  g_stats.rx_frames_ok++;
 
-    ack_frame[4] = frame.seq_num;
+  uint8_t type_val = static_cast<uint8_t>(frame.type);
+
+  // 1. Пришли данные (DATA) -> отвечаем ACK
+  if (type_val == 0x01) {
+    uint8_t ack_frame[9] = {0xAA,          0x55, 0x01,
+                            0x02, // MSG_TYPE_ACK
+                            frame.seq_num, 0x00, 0x00, 0x00, 0x00};
 
     uint16_t crc = protocol::Crc16::calculate(&ack_frame[2], 5);
-
     ack_frame[7] = static_cast<uint8_t>((crc >> 8) & 0xFF);
     ack_frame[8] = static_cast<uint8_t>(crc & 0xFF);
 
-#ifdef CI_RENODE_TEST
-    HAL_UART_Transmit(&huart1, ack_frame, sizeof(ack_frame), 100);
-#else
     g_tx_manager.send_bytes(ack_frame, sizeof(ack_frame));
-#endif
+  }
+  // 2. Пришел ACK -> передаем его менеджеру
+  else if (type_val == 0x02) {
+    g_tx_manager.on_ack_received(frame.seq_num);
+  }
+  // 3. Запрос телеметрии (GET_STATS) от Python-теста
+  else if (type_val == 0x10) {
+    constexpr size_t stats_len = sizeof(protocol::DiagnosticsStats);
+    constexpr size_t frame_len = 9 + stats_len;
+
+    uint8_t resp_frame[frame_len] = {0};
+    resp_frame[0] = 0xAA;
+    resp_frame[1] = 0x55;
+    resp_frame[2] = 0x01;
+    resp_frame[3] = 0x11; // STATS_RESP
+    resp_frame[4] = frame.seq_num;
+    resp_frame[5] = static_cast<uint8_t>((stats_len >> 8) & 0xFF);
+    resp_frame[6] = static_cast<uint8_t>(stats_len & 0xFF);
+
+    std::memcpy(&resp_frame[7], &g_stats, stats_len);
+
+    uint16_t crc = protocol::Crc16::calculate(&resp_frame[2], 5 + stats_len);
+    resp_frame[frame_len - 2] = static_cast<uint8_t>((crc >> 8) & 0xFF);
+    resp_frame[frame_len - 1] = static_cast<uint8_t>(crc & 0xFF);
+
+    g_tx_manager.send_bytes(resp_frame, frame_len);
   }
 }
 static protocol::FrameParser g_parser(g_stats, on_frame_parsed);
@@ -252,7 +283,6 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART1) {
     uint32_t er = huart->ErrorCode;
-
     if (er & HAL_UART_ERROR_FE)
       g_stats.hw_framing_errors++;
     if (er & HAL_UART_ERROR_PE)
@@ -297,31 +327,20 @@ int main(void) {
 
   /* Infinite loop */
   while (1) {
+    // 1. Проверяем таймауты ACK
+    g_tx_manager.process_timeouts(HAL_GetTick());
+
 #ifndef CI_RENODE_TEST
-    // === ДОБАВЛЕНО: Проверка нажатия кнопки ТОЛЬКО на реальном железе ===
-    // Игнорируем в эмуляторе Renode, чтобы неподключенный пин не вызвал ложных
-    // срабатываний
+    // 2. Реакция на кнопку
     if (is_button_pressed_debounced()) {
       send_lorem_ipsum_stream(g_tx_manager);
     }
 #endif
 
-    // Автосброс зависшего кадра при молчании линии дольше 200 мс
+    // 3. Таймаут FSM парсера
     g_parser.check_timeout(HAL_GetTick(), 200);
 
-#ifndef CI_RENODE_TEST
-    size_t dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
-
-    if (g_data_received_event || (g_read_pos != dma_write_pos)) {
-      g_data_received_event = false;
-
-      while (g_read_pos != dma_write_pos) {
-        uint8_t byte = g_dma_rx_buffer[g_read_pos];
-        g_parser.process_byte(byte);
-        g_read_pos = (g_read_pos + 1) & DMA_RX_BUFFER_MASK;
-        dma_write_pos = DMA_RX_BUFFER_SIZE - get_dma_rx_counter();
-      }
-    }
-#endif
+    // 4. Вычитка входящих байт
+    process_dma_rx_bytes();
   }
 }
