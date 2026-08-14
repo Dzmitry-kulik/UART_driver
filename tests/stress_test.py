@@ -53,7 +53,7 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> int:
     start_time = time.time()
     last_report = start_time
 
-    BAUD_RATE = 1200
+    BAUD_RATE = 115200
     BYTES_PER_SEC = BAUD_RATE / 10.0
 
     while time.time() - start_time < duration_sec:
