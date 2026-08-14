@@ -138,7 +138,7 @@ vehicula lectus, id volutpat mi. In imperdiet arcu suscipit maximus
 pretium. Cras sed auctor diam. Maecenas ultricies in ligula vitae
 faucibus)";
 
-// === ИСПРАВЛЕНИЕ: Защита от разменования NULL-указателя ===
+// === Защита от разыменования NULL-указателя ===
 inline uint16_t get_dma_rx_counter(void) {
   if (huart1.hdmarx == nullptr || huart1.hdmarx->Instance == nullptr) {
     return DMA_RX_BUFFER_SIZE;
@@ -184,14 +184,19 @@ void send_lorem_ipsum_stream(protocol::UartTxManager &tx_mgr) {
       g_ack_received = false;
       g_waiting_seq_num = seq_num;
 
+      // 1. Пытаемся поместить кадр в очередь и запустить передачу
       while (!tx_mgr.send_frame_with_ack(MSG_TYPE_DATA, seq_num, chunk_ptr,
                                          bytes_to_send, 150, 3)) {
         process_dma_rx_bytes();
+        tx_mgr.process_timeouts(HAL_GetTick()); // Продвигаем DMA-передачу
       }
 
+      // 2. Ожидаем подтверждения ACK (до 150 мс)
       uint32_t start_time = HAL_GetTick();
       while ((HAL_GetTick() - start_time) < 150) {
         process_dma_rx_bytes();
+        tx_mgr.process_timeouts(HAL_GetTick()); // Продвигаем DMA-передачу
+
         if (g_ack_received) {
           delivered = true;
           break;
@@ -255,6 +260,8 @@ void on_frame_parsed(
   } else if (frame.type == protocol::MessageType::ACK) {
     if (frame.seq_num == g_waiting_seq_num) {
       g_ack_received = true;
+      g_tx_manager.on_ack_received(
+          frame.seq_num); // ИСПРАВЛЕНИЕ: Сбрасываем флаг в менеджере!
     }
   } else if (frame.type == protocol::MessageType::GET_STATS) {
     if (g_tx_manager.send_frame(
