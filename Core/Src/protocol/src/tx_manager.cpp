@@ -29,18 +29,39 @@ uint16_t calculate_crc16_step(uint16_t crc, const uint8_t *data, size_t len) {
 UartTxManager::UartTxManager(UART_HandleTypeDef &huart)
     : huart_(huart), tx_queue_(tx_raw_buffer_, TX_QUEUE_SIZE) {}
 
+// === Вспомогательная функция безопасного старта DMA ===
+void UartTxManager::try_start_transmission() {
+  bool start_tx = false;
+  __disable_irq();
+  if (!is_transmitting_ && !tx_queue_.empty()) {
+    is_transmitting_ = true;
+    start_tx = true;
+  }
+  __enable_irq();
+
+  if (start_tx) {
+    start_dma_transmission();
+  }
+}
+
 bool UartTxManager::send_bytes(const uint8_t *data, size_t len) {
   if (!data || len == 0) {
     return true;
   }
 
+  bool success = true;
   for (size_t i = 0; i < len; ++i) {
     if (!tx_queue_.push(data[i])) {
-      return false;
+      success = false;
+      break;
     }
   }
 
-  return true;
+  // Автоматический запуск отправки:
+  // если линия простаивала, данные начнут уходить в DMA прямо сейчас
+  try_start_transmission();
+
+  return success;
 }
 
 bool UartTxManager::send_frame(uint8_t msg_type, uint8_t seq_num,
@@ -124,17 +145,7 @@ void UartTxManager::process_timeouts(uint32_t current_tick) {
     }
   }
 
-  bool start_tx = false;
-  __disable_irq();
-  if (!is_transmitting_ && !tx_queue_.empty()) {
-    is_transmitting_ = true;
-    start_tx = true;
-  }
-  __enable_irq();
-
-  if (start_tx) {
-    start_dma_transmission();
-  }
+  try_start_transmission();
 }
 
 void UartTxManager::on_tx_complete_isr() {
