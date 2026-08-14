@@ -44,7 +44,7 @@ def read_mcu_stats(elf_path: str) -> dict:
         return {}
 
 def run_stress_test(ser: serial.Serial, duration_sec: int) -> int:
-    print(f"🚀 Запуск стресс-теста ({duration_sec} сек) на скорости ~115200 baud...")
+    print(f"🚀 Запуск стресс-теста ({duration_sec} сек) на скорости ~1200 baud...")
 
     payload = b"STRESS_TEST_PACKET_64B_PAYLOAD_FOR_STM32_RING_BUFFER_TESTING__"
     seq_num = 0
@@ -53,7 +53,7 @@ def run_stress_test(ser: serial.Serial, duration_sec: int) -> int:
     start_time = time.time()
     last_report = start_time
 
-    BAUD_RATE = 115200
+    BAUD_RATE = 1200
     BYTES_PER_SEC = BAUD_RATE / 10.0
 
     while time.time() - start_time < duration_sec:
