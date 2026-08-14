@@ -62,6 +62,7 @@ public:
   void on_tx_complete_isr();
 
 private:
+  void try_start_transmission();
   void start_dma_transmission();
 
   UART_HandleTypeDef &huart_;
