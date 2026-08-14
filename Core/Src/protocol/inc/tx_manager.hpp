@@ -82,5 +82,4 @@ private:
   uint32_t pending_timeout_ms_{150};
   uint8_t pending_retries_left_{0};
 };
-
 } // namespace protocol
